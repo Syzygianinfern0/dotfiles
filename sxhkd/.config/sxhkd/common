@@ -1,0 +1,43 @@
+# ##############################################################################
+# #                                APPLICATIONS                                #
+# ##############################################################################
+# launch terminal
+super + Return
+    gnome-terminal
+
+super + e
+    nautilus
+
+# ##############################################################################
+# #                                   HOTKEYS                                  #
+# ##############################################################################
+
+# application launcher
+super + d
+    rofi -show drun -modi drun
+
+# ssh config quick connect
+super + a
+    rofi -show ssh
+
+super + c
+    rofi -modi "clipboard:greenclip print" -show clipboard -run-command '{cmd}'
+
+# color picker
+# screenshot
+# emoji
+
+# ##############################################################################
+# #                                 SYSTEM KEYS                                #
+# ##############################################################################
+# brightness control
+XF86MonBrightness{Up,Down}
+    brightnessctl s {+5%, 5%-}
+
+# volume control
+XF86Audio{RaiseVolume,LowerVolume,Mute}
+    pulsemixer {--change-volume +10, --change-volume -10, --toggle-mute}
+
+# music control
+XF86Audio{Next,Prev,Play,Stop}
+    mpc {next,prev,toggle,stop}

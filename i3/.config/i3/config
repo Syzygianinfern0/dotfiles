@@ -1,0 +1,70 @@
+# Core
+set $mod Mod4
+floating_modifier $mod
+font pango:monospace 12
+
+# Rules
+for_window [class="^.*"] border pixel 3
+gaps inner 10
+# gaps top 60
+
+# Workspaces
+set $ws1 "1"
+set $ws2 "2"
+set $ws3 "3"
+set $ws4 "4"
+set $ws5 "5"
+set $ws6 "6"
+set $ws7 "7"
+set $ws8 "8"
+set $ws9 "9"
+set $ws10 "10"
+
+# Rules TODO: Fix the classes
+assign [instance="google-chrome"] $ws1
+assign [class="jetbrains-pycharm"] $ws2
+assign [class="Code"] $ws2
+for_window [class="Spotify"] move container to workspace $ws4
+assign [class="calendar"] $ws5
+assign [class="todoist"] $ws5
+assign [class="slack"] $ws6
+assign [class="joplin"] $ws6
+assign [title="WhatsApp"] $ws7
+assign [class="telegram"] $ws7
+assign [class="discord"] $ws8
+assign [class="qbittorrent"] $ws8
+
+# Theme
+include $HOME/.config/i3/theme.conf
+
+# Apps
+exec_always --no-startup-id ~/.config/i3/autostart.sh
+
+# Status bars
+bar {
+    id bar-main
+    font pango:JetBrains Mono 10
+    position top
+    status_command ~/.local/src/bumblebee-status/bumblebee-status
+    i3bar_command i3bar -t
+    tray_output none
+    colors {
+        background #181825
+        focused_workspace #b4befe #313244 #cdd6f4
+        inactive_workspace #181825 #1e1e2e #6c7086
+        urgent_workspace #f5e0dc #f38ba8 #11111b
+   }
+}
+bar {
+    id bar-systray
+    position bottom
+    tray_output primary
+    workspace_buttons no
+    mode hide
+    hidden_state hide
+    modifier Mod1
+    i3bar_command i3bar -t
+    colors {
+        background #00000000
+    }
+}

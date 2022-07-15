@@ -1,0 +1,52 @@
+#! /bin/bash
+## Workspace Configurations
+bspc monitor -d 1 2 3 4 5 6 7 8
+#bspc monitor -d 1 2 3 4 5 6
+
+## BSPC Configs
+config() { bspc config "$@" & }
+# config border_width 4
+config window_gap 10
+config split_ratio 0.5
+
+config borderless_monocle true
+config gapless_monocle true
+config single_monocle false
+config focus_follows_pointer true
+
+config pointer_modifier mod4
+config pointer_action1 move
+config pointer_action2 resize_corner
+
+# config focused_border_color "#f38ba8"
+# config normal_border_color "#585b70"
+
+## Window rules
+bspc rule -r *:* # erase existing rules
+rule() { bspc rule -a "$@" & }
+rule Google-chrome desktop=^1 follow=on focus=on
+rule jetbrains-pycharm desktop=^2 follow=on focus=on
+rule Nitrogen state=floating
+rule Pavucontrol state=floating
+# TODO: Check out archcraft-bspwm for more rules
+
+## Launching Apps
+killall -9 sxhkd dunst polybar picom flameshot greenclip borders
+sxhkd -c "$HOME"/.config/sxhkd/common "$HOME"/.config/sxhkd/bspwm &
+dunst &
+"$HOME"/.config/polybar/launch.sh
+# "$HOME"/.local/src/picom-ibhagwan/build/src/picom --experimental-backends &
+# picom --experimental-backends &
+picom &
+flameshot &
+greenclip daemon &
+"$HOME"/.config/bspwm/borders &
+# "$HOME"/.config/bspwm/fehbg
+nitrogen --restore &
+/usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 &
+# /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 &
+
+## Misc
+xsetroot -cursor_name left_ptr
+wmname LG3D
+export _JAVA_AWT_WM_NONREPARENTING=1

@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Change GPU profile using system76-power
+# https://github.com/pop-os/system76-power
+
+if [ "$#" -ne 1 ]; then
+    sudo system76-power graphics
+else
+    sudo system76-power graphics "$1"
+fi

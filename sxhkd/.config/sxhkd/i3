@@ -1,0 +1,79 @@
+# ##############################################################################
+# #                              RESTART SERVICES                              #
+# ##############################################################################
+
+# quit/restart bspwm
+super + alt + {q,r}
+    i3-msg {exit,restart}
+
+# reload sxhkd
+super + Escape
+    pkill -USR1 -x sxhkd
+
+# lockscreen
+# powermenu
+
+# ##############################################################################
+# #                                 i3 RELATED                                 #
+# ##############################################################################
+
+# close
+super + w
+    i3-msg kill
+
+# toggle i3-status
+super + b
+    i3-msg bar mode {hide,dock; i3-msg reload}
+    # the reload is a hacky way to disable the systray bar which is always
+    # supposed to be on auto-hide
+
+# ##############################################################################
+# #                               PRESELECTING                                 #
+# ##############################################################################
+
+# layout switcher
+super + o; {t,s,e}
+    i3-msg layout {tabbed,stacking,toggle split}
+
+# horizontal or vertical split (use with caution when running autotiling)
+super + o; {h,v}
+    i3-msg split {h,v}
+
+# ##############################################################################
+# #                              WINDOW STATES                                 #
+# ##############################################################################
+
+# set the window state (toggle for floating and fullscreen modes)
+super + {f,s}
+    i3-msg {fullscreen toggle,floating toggle}
+
+# ##############################################################################
+# #                               NAVIGATION                                   #
+# ##############################################################################
+
+# send to the given desktop
+super + shift + {1-9,0}
+    i3-msg move container to workspace number {1-9}
+
+## focus to the given desktop
+super + {1-9,0}
+    i3-msg workspace {1-9,10}
+
+super + grave; {1-4}
+    i3-msg workspace {5-8}
+
+# focus the next/previous workspace
+super + bracket{left,right}
+    i3-msg workspace {prev,next}
+
+# resize focussed window
+super + ctrl + {h,j,k,l}
+    i3-msg resize {grow width 1 px or 1 ppt, shrink height 1 px or 1 ppt, grow height 1 px or 1 ppt, shrink width 1 px or 1 ppt}
+
+# ##############################################################################
+# #                                 FOCUS                                      #
+# ##############################################################################
+
+# focus the node in the given direction
+super + {_,shift + } {h,j,k,l}
+    i3-msg {focus,move} {left,down,up,right}

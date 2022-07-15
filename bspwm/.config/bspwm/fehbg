@@ -1,0 +1,4 @@
+#!/bin/bash
+#feh --no-fehbg --bg-fill --randomize "$HOME/Pictures/wallpapers-rand/wallpapers/light"
+#feh --no-fehbg --bg-fill --randomize "$HOME/Pictures/huh/"
+feh --no-fehbg --bg-fill --randomize "$HOME/Pictures/juminai/"
