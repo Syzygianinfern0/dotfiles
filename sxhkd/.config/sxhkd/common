@@ -3,7 +3,7 @@
 # ##############################################################################
 # launch terminal
 super + Return
-    gnome-terminal
+    alacritty
 
 super + e
     nautilus
