@@ -53,14 +53,14 @@ super + {f,s}
 
 # send to the given desktop
 super + shift + {1-9,0}
-    i3-msg move container to workspace number {1-9}
+    i3-msg move container to workspace number {1:,2:,3:,4:,5:,6:,7:,8:,9:,10:}
 
 ## focus to the given desktop
 super + {1-9,0}
-    i3-msg workspace {1-9,10}
+    i3-msg workspace {1:,2:,3:,4:,5:,6:,7:,8:,9:,10:}
 
 super + grave; {1-4}
-    i3-msg workspace {5-8}
+    i3-msg workspace {5:,6:,7:,8:}
 
 # focus the next/previous workspace
 super + bracket{left,right}

@@ -9,16 +9,16 @@ gaps inner 10
 # gaps top 60
 
 # Workspaces
-set $ws1 "1"
-set $ws2 "2"
-set $ws3 "3"
-set $ws4 "4"
-set $ws5 "5"
-set $ws6 "6"
-set $ws7 "7"
-set $ws8 "8"
-set $ws9 "9"
-set $ws10 "10"
+set $ws1 "1:"
+set $ws2 "2:"
+set $ws3 "3:"
+set $ws4 "4:"
+set $ws5 "5:"
+set $ws6 "6:"
+set $ws7 "7:"
+set $ws8 "8:"
+set $ws9 "9:"
+set $ws10 "10:"
 
 # Rules TODO: Fix the classes
 assign [instance="google-chrome"] $ws1
@@ -57,6 +57,7 @@ bar {
 }
 bar {
     id bar-systray
+    font pango:JetBrains Mono 12
     position bottom
     tray_output primary
     workspace_buttons no
