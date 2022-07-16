@@ -14,7 +14,7 @@ super + e
 
 # application launcher
 super + d
-    rofi -show drun -modi drun
+    "$HOME"/.config/rofi/launchers/launcher.sh
 
 # ssh config quick connect
 super + a

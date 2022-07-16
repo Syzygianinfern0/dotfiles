@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 killall -9 sxhkd dunst flameshot polybar picom greenclip autotiling nm-applet
 sxhkd -c "$HOME"/.config/sxhkd/common "$HOME"/.config/sxhkd/i3 &

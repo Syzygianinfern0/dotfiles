@@ -1,10 +1,12 @@
 # Core
 set $mod Mod4
 floating_modifier $mod
-font pango:monospace 12
+font pango:JetBrains Mono 10
 
 # Rules
 for_window [class="^.*"] border pixel 3
+title_align center
+for_window [class=".*"] title_format "<b>%title</b>"
 gaps inner 10
 # gaps top 60
 
@@ -19,6 +21,7 @@ set $ws7 "7:"
 set $ws8 "8:"
 set $ws9 "9:"
 set $ws10 "10:"
+exec i3-msg workspace $ws1
 
 # Rules TODO: Fix the classes
 assign [instance="google-chrome"] $ws1
@@ -39,6 +42,7 @@ include $HOME/.config/i3/theme.conf
 
 # Apps
 exec_always --no-startup-id ~/.config/i3/autostart.sh
+exec_always --no-startup-id ~/bin/autotiling
 
 # Status bars
 bar {
