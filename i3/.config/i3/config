@@ -21,7 +21,7 @@ set $ws7 "7:"
 set $ws8 "8:"
 set $ws9 "9:"
 set $ws10 "10:"
-exec i3-msg workspace $ws1
+exec --no-startup-id i3-msg workspace $ws1
 
 # Rules TODO: Fix the classes
 assign [instance="google-chrome"] $ws1

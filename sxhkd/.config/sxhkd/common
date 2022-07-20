@@ -16,8 +16,12 @@ super + e
 super + d
     "$HOME"/.config/rofi/launchers/launcher.sh
 
+# powermenu
+super + a; l
+    "$HOME"/.config/rofi/powermenus/powermenu.sh
+
 # ssh config quick connect
-super + a
+super + a; a
     rofi -show ssh
 
 super + c

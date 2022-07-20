@@ -22,9 +22,9 @@ Its not headless ig. Most things are super rough rn and not to be used just like
     - [x] bar
     - [x] picom
     - [ ] rofi
-        - [ ] launcher
-        - [ ] clipboard
-        - [ ] powermenu
+        - [x] launcher
+        - [x] clipboard
+        - [x] powermenu
         - [ ] emoji
         - [ ] screenshot
         - [ ] color picker
