@@ -45,5 +45,5 @@ sudo apt install stow bspwm sxhkd dunst polybar rofi nitrogen libnotify-bin \
 
 ```shell
 sudo apt install python3-pip
-pip install i3ipc netifaces psutil
+pip install i3ipc netifaces psutil rofimoji
 ```

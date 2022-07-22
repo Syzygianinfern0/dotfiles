@@ -24,12 +24,15 @@ super + a; l
 super + a; a
     rofi -show ssh
 
+# clipboard
 super + c
-    rofi -modi "clipboard:greenclip print" -show clipboard -run-command '{cmd}'
+    rofi -modi "clipboard:~/bin/greenclip print" -show clipboard -run-command '{cmd}'
 
 # color picker
 # screenshot
 # emoji
+super + period
+    "$HOME"/.local/bin/rofimoji
 
 # ##############################################################################
 # #                                 SYSTEM KEYS                                #
