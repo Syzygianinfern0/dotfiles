@@ -10,4 +10,5 @@
 
 ```shell
 sh -c "$(curl -fsLS get.chezmoi.io)"
+chezmoi init --apply $Syzygianinfern0
 ```
