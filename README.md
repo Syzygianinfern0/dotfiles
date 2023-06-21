@@ -9,6 +9,5 @@
 ## Quick Start
 
 ```shell
-sh -c "$(curl -fsLS get.chezmoi.io)"
-chezmoi init --apply $Syzygianinfern0
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply $Syzygianinfern0
 ```

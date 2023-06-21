@@ -37,7 +37,7 @@ zstyle ':omz:update' mode auto # update automatically without asking
 # zstyle ':omz:update' mode reminder  # just remind me to update when it's time
 
 # Uncomment the following line to change how often to auto-update (in days).
-zstyle ':omz:update' frequency 14
+zstyle ':omz:update' frequency 1
 
 # Uncomment the following line if pasting URLs and other text is messed up.
 # DISABLE_MAGIC_FUNCTIONS="true"
@@ -82,13 +82,14 @@ plugins=(
     git
     conda-zsh-completion
     zsh-autosuggestions
+    autoupdate
     zsh-syntax-highlighting
     zsh-history-substring-search
 )
 
-fpath+=${ZSH_CUSTOM:-${ZSH:-~/.oh-my-zsh}/custom}/plugins/zsh-completions/src
+# fpath+=${ZSH_CUSTOM:-${ZSH:-~/.oh-my-zsh}/custom}/plugins/zsh-completions/src
 source $ZSH/oh-my-zsh.sh
-autoload -U compinit && compinit
+# autoload -U compinit && compinit
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 bindkey "$terminfo[kcuu1]" history-substring-search-up
