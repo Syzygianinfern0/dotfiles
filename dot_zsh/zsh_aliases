@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# linux
+alias ls='exa'
+alias la='ls -lah'
+alias sizes="find . -type f -exec du -hs {} + | sort -rh | less"
+alias sizesd="find . -type d -exec du -h {} + | sort -rh | less"
+function lss() {
+    find . -mindepth 1 -type d -exec sh -c 'echo "{} : $(find "{}" -type f | wc -l)" file\(s\)' \;
+}
+alias pre-commit-setup='pre-commit install && wget "https://gist.githubusercontent.com/Syzygianinfern0/57d9493ba55a64df24e11f26049dbd07/raw/.pre-commit-config.yaml" && pre-commit autoupdate'
+
+# tmux
+alias tn='tmux new -s'
+alias ta='tmux a -t'
+alias tl='tmux ls'
+
+# conda
+alias ca='conda activate'
+alias ci='conda info -e'
+alias cc='conda clean -ay'
+
+clear
+neofetch

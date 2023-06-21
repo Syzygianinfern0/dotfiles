@@ -1,0 +1,7 @@
+[user]
+    name = Syzygianinfern0
+    email = spsharan2000@gmail.com
+[init]
+    defaultBranch = main
+[core]
+    editor = nano
