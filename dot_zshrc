@@ -80,9 +80,20 @@ COMPLETION_WAITING_DOTS="true"
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(
     git
+    brew
+    copyfile # copy file contents to clipboard
+    copypath # copy path of current directory
+    cp # copy but with rsync (call cvp)
+    docker
+    docker-compose
+    dotenv
+    extract
+    macos
+    magic-enter # enter buttun runs ls or git status
+    perms # reserperms command to 755 and 644 recursively
     conda-zsh-completion
     zsh-autosuggestions
-    autoupdate
+    autoupdate # update oh-my-zsh plugins automatically
     zsh-syntax-highlighting
     zsh-history-substring-search
 )

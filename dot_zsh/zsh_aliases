@@ -3,6 +3,8 @@
 # linux
 alias ls='exa'
 alias la='ls -lah'
+alias df='duf'
+
 alias sizes="find . -type f -exec du -hs {} + | sort -rh | less"
 alias sizesd="find . -type d -exec du -h {} + | sort -rh | less"
 function lss() {
