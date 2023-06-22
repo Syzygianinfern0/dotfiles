@@ -22,5 +22,8 @@ alias ca='conda activate'
 alias ci='conda info -e'
 alias cc='conda clean -ay'
 
-clear
-neofetch
+# chezmoi
+alias dp='chezmoi update'
+alias da='chezmoi apply'
+alias dcd='chezmoi cd'
+alias ddiff='chezmoi diff'
