@@ -25,3 +25,5 @@ echo "Installing autoupdate..."
 git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/autoupdate
 
 echo "Complete!"
+
+chezmoi apply

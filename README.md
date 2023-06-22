@@ -9,5 +9,11 @@
 ## Quick Start
 
 ```shell
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply $Syzygianinfern0
+apt update
+apt install -y git curl
+```
+
+```shell
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply Syzygianinfern0
+~/bin/install_dots.sh
 ```
