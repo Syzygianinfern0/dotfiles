@@ -1,0 +1,13 @@
+#!/bin/bash
+
+BACKUP_DIR="/Users/ss99569/Documents/Life/Joplin-Journal"
+JOPLIN_BIN="joplin"
+NOW=$( date '+%F_%H:%M:%S' )
+
+cd $BACKUP_DIR
+git pull --rebase
+rm -rf Joplin
+$JOPLIN_BIN --profile ~/.config/joplin-desktop/ export --format md $BACKUP_DIR/Joplin
+git add .
+git commit -m "update-$NOW"
+git push
