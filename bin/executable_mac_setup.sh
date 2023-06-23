@@ -11,3 +11,6 @@ brew install duf
 brew install broot
 brew install fzf
 brew install rclone
+brew install age
+brew install jq
+brew install mpv

@@ -10,7 +10,7 @@
 
 ```shell
 apt update
-apt install -y git curl
+apt install -y git curl zsh exa
 ```
 
 ```shell
