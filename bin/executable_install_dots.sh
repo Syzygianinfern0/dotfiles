@@ -27,4 +27,4 @@ git clone -qq https://github.com/TamCore/autoupdate-oh-my-zsh-plugins ${ZSH_CUST
 echo "Complete!"
 
 rm ~/.zshrc
-chezmoi apply
+~/bin/chezmoi apply
