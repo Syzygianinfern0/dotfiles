@@ -86,7 +86,7 @@ plugins=(
     cp # copy but with rsync (call cvp)
     docker
     docker-compose
-    dotenv
+    # dotenv
     extract
     macos
     magic-enter # enter buttun runs ls or git status
