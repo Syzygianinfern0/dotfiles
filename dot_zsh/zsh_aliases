@@ -28,3 +28,8 @@ alias da='chezmoi apply'
 alias dcd='chezmoi cd'
 alias ddiff='chezmoi diff'
 alias dm='chezmoi merge'
+
+# misc
+alias tb='tensorboard --logdir'
+alias jl='jupyter-lab'
+alias jnb='jupyter-notebook'
