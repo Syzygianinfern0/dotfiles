@@ -1,21 +1,39 @@
 #!python
+import argparse
+
 import requests
 
-headers = {
-    "Content-Type": "application/json",
-}
 
-json_data = {
-    # "value1": "Test",
-    # "value2": "Test",
-    # "value3": "Test",
-}
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--subject")
+    parser.add_argument("--body")
+    parser.add_argument("--comment")
+    args = parser.parse_args()
+    return args
 
-response = requests.post(
-    "https://maker.ifttt.com/trigger/SCRIPT_END_TRIGGER/with/key/CN07CQ_6PmT_0UjxV9YvMRmpyvCpIaooppQP3-bmIc",
-    headers=headers,
-    json=json_data,
-)
+
+def main():
+    args = parse_args()
+    headers = {
+        "Content-Type": "application/json",
+    }
+
+    json_data = {
+        "value1": f"{args.subject}",
+        "value2": f"{args.body}",
+        "value3": f"{args.comment}",
+    }
+
+    response = requests.post(
+        "https://maker.ifttt.com/trigger/SCRIPT_END_TRIGGER/with/key/CN07CQ_6PmT_0UjxV9YvMRmpyvCpIaooppQP3-bmIc",
+        headers=headers,
+        json=json_data,
+    )
+
+
+if __name__ == "__main__":
+    main()
 
 
 # import sys
