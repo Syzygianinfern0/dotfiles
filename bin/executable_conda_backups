@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# Directory to save environment yml files
+SAVE_DIR="$HOME/.config/conda_envs"
+
+# Ensure the directory exists
+mkdir -p "$SAVE_DIR"
+
+# Get the list of conda environments
+envs=$(conda info -e | tail -n +3 | awk '{print $1}')
+
+# Display the available environments
+echo "Available conda environments:"
+select env in $envs; do
+    if [[ -n $env ]]; then
+        # Export the selected environment's configuration
+        echo "Exporting $env..."
+        conda env export -n $env > "${SAVE_DIR}/${env}.yml"
+
+        # Delete the selected environment
+        read -p "Are you sure you want to delete the environment $env? [y/n] " -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "Deleting $env..."
+            conda remove --name $env --all
+        else
+            echo "Aborting deletion of $env."
+        fi
+    else
+        echo "Invalid selection. Exiting."
+    fi
+    break
+done
