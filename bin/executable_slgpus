@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+from typing import List
+import argparse
+import subprocess
+
+# NB: We could do easier processing with `pandas`, but loading this is slow
+
+
+def parse_arguments():
+    _DESC = "Print stats for current GPU usage on SLURM cluster"
+    parser = argparse.ArgumentParser(description=_DESC)
+    parser.add_argument("--constraint", default=None)
+    parser.add_argument("--per-gpu-node", action="store_true")
+    return parser.parse_args()
+
+
+def run_bash_command(cmd: List[str]):
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    return process.communicate()
+
+
+def get_slinfo_output():
+    output, error = run_bash_command([
+        "sinfo",
+        "-o",
+        "'%10P %12n %.5t %.4c %.6m %6G %35f %10L %8O %10E'",
+        "-S",
+        "'+P+N'",
+    ])
+    output = [
+        line.strip("'").split() for line in output.decode("utf-8").split("\n")
+    ][1:-1]  # First row is header, last is from split(\n)
+    return output
+
+
+def get_slqueue_output():
+    output, error = run_bash_command([
+        "squeue",
+        "-o",
+        "'%8i %10u %15j %4t %5D %15R %6b %3C %7m %10M %11l %11L'",
+        "-S",
+        "+M",
+    ])
+    output = [
+        line.strip("'").split() for line in output.decode("utf-8").split("\n")
+    ][1:-1]  # First row is header, last is from split(\n)
+    return output
+
+
+def get_gpu_count(gpu_nodes):
+    num_gpus_total = sum([int(node[5].split(":")[1]) for node in gpu_nodes])
+    num_gpus_online = sum([
+        int(node[5].split(":")[1])
+        for node in gpu_nodes if not node[2] == "down"
+    ])
+    return num_gpus_online, num_gpus_total
+
+
+def find_active_constraint(constraint: str, node_constraints: List[str]):
+    return any(constraint == txt for txt in node_constraints)
+
+
+def main():
+    args = parse_arguments()
+
+    sinfo = get_slinfo_output()
+    squeue = get_slqueue_output()
+
+    header_txt = "GPU compute statistics"
+    gpu_nodes = [node for node in sinfo if "gpu" in node[0]]
+    num_nodes_total = len(gpu_nodes)
+    if args.constraint:
+        header_txt += f" (constraint = {args.constraint})"
+        gpu_nodes = [
+            node for node in gpu_nodes
+            if find_active_constraint(args.constraint, node[6].split(","))
+        ]
+    active_node_names = [node[1] for node in gpu_nodes]
+
+    print(header_txt)
+    if args.constraint:
+        print(f"  - Constraint ({args.constraint}) reduced nodes from "
+              f"{num_nodes_total} to {len(gpu_nodes)}")
+
+    # Basic statistics on compute nodes
+    print("\nNodes:")
+    num_gpus_online, num_gpus_total = get_gpu_count(gpu_nodes)
+    num_cpus_on_gpu_nodes = sum([int(node[3]) for node in gpu_nodes])
+    print(f" - {len(gpu_nodes)} nodes with {num_gpus_online} GPUs "
+          f"(and {num_cpus_on_gpu_nodes} CPUs) available")
+    print(f" - ({num_gpus_total} total GPUs -> "
+          f"{num_gpus_online-num_gpus_total} down)")
+    gpu_nodes_idle = [node for node in gpu_nodes if node[2] == "idle"]
+    gpu_nodes_idle_str = ", ".join(
+        sorted([node[1] for node in gpu_nodes_idle])
+    )
+    print(f" - {len(gpu_nodes_idle)} idle GPU nodes ({gpu_nodes_idle_str})")
+
+    # GPU usage
+    active_jobs = [
+        job for job in squeue
+        if "gpu" in job[6] and job[5] in active_node_names
+    ]
+    print("\nUsage:")
+    num_gpus_used = sum([int(job[6].split(":")[1]) for job in active_jobs])
+    print(f" - {num_gpus_used}/{num_gpus_online} GPUs in use -> "
+          f"{num_gpus_online-num_gpus_used} GPUs free")
+
+    # GPU usage per GPU node
+    if args.per_gpu_node:
+        print("\nUsage per node:")
+        from collections import defaultdict
+        num_gpus_per_node = defaultdict(int)
+        for node in gpu_nodes:
+            num_gpus_per_node[node[1]] += int(node[5].split(":")[1])
+        num_gpus_used_per_node = defaultdict(int)
+        for job in active_jobs:
+            num_gpus_used_per_node[job[5]] += int(job[6].split(":")[1])
+        for node_name, node_gpu_cnt in num_gpus_per_node.items():
+            num_used = num_gpus_used_per_node[node_name]
+            print(f" - [{node_name}] {num_used}/{node_gpu_cnt} used -> "
+                  f"{node_gpu_cnt-num_used} free")
+
+
+if __name__ == '__main__':
+    main()
