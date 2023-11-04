@@ -15,14 +15,14 @@ select env in $envs; do
     if [[ -n $env ]]; then
         # Export the selected environment's configuration
         echo "Exporting $env..."
-        conda env export -n $env > "${SAVE_DIR}/${env}.yml"
+        conda env export -n $env >"${SAVE_DIR}/${env}.yml"
 
         # Delete the selected environment
         read -p "Are you sure you want to delete the environment $env? [y/n] " -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo "Deleting $env..."
-            conda remove --name $env --all
+            conda remove --name $env --all -y
         else
             echo "Aborting deletion of $env."
         fi
