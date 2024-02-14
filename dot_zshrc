@@ -186,6 +186,14 @@ function pip() {
     fi
 }
 
+function pip3() {
+    if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
+        echo "Not allowed in base"
+    else
+        command pip3 "$@"
+    fi
+}
+
 function extended_conda() {
     if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
         echo "Not allowed in base"
