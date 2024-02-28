@@ -49,3 +49,7 @@ alias sq="squeue -Su -o '%8i %10u %20j %4t %5D %20R %15b %3C %7m %11l %11L'"
 alias sqg="sq -p gpu"
 alias sqc="sq -p cpu"
 alias squ="sq -u `id -un`"
+
+alias srun_cpu="srun --partition=cpu -c 32 --mem=250G --time 1440:00:00 --pty /bin/zsh"
+alias srun_a6000="srun --constraint=A6000 --gres=gpu:8 -c 48 --mem=375G --time 1440:00:00 --pty zsh"
+alias srun_2080ti="srun --constraint=RTX2080Ti --gres=gpu:8 -c 32 --mem=375G --time 1440:00:00 --pty zsh"
