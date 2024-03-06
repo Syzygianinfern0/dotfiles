@@ -53,3 +53,12 @@ alias squ="sq -u `id -un`"
 alias srun_cpu="srun --partition=cpu -c 32 --mem=250G --time 1440:00:00 --pty /bin/zsh"
 alias srun_a6000="srun --constraint=A6000 --gres=gpu:8 -c 48 --mem=375G --time 1440:00:00 --pty zsh"
 alias srun_2080ti="srun --constraint=RTX2080Ti --gres=gpu:8 -c 32 --mem=375G --time 1440:00:00 --pty zsh"
+
+# vid editing
+function dji_merge() {
+    parent_folder=$(basename "$(pwd)"); find *.MP4 | sed 's:\ :\\\ :g'| sed 's/^/file /' > fl.txt; ffmpeg -f concat -i fl.txt -c copy "${parent_folder}.MP4"; rm fl.txt
+}
+
+function dji_chapters() {
+    find . -maxdepth 1 -type f -name '*.MP4' | sort | awk -F/ '{print $(NF)}' | while read file; do ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file" | xargs -I {} echo "$file" {} ; done | awk 'BEGIN{total=0}{gsub(".mp4", "", $1); hours=int(total/3600); mins=int((total%3600)/60); secs=int(total%60); printf "%02d:%02d:%02d %s\n", hours, mins, secs, $1; total+=$2}'
+}
