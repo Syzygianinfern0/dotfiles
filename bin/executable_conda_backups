@@ -15,7 +15,8 @@ select env in $envs; do
     if [[ -n $env ]]; then
         # Export the selected environment's configuration
         echo "Exporting $env..."
-        conda env export -n $env >"${SAVE_DIR}/${env}.yml"
+        timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
+        conda env export -n $env >"${SAVE_DIR}/${env}_${timestamp}.yml"
 
         # Delete the selected environment
         read -p "Are you sure you want to delete the environment $env? [y/n] " -r
