@@ -21,6 +21,7 @@ alias tl='tmux ls'
 alias ca='conda activate'
 alias ci='conda info -e'
 alias cc='conda clean -ay'
+alias cr='conda remove --all -y --name'
 
 # chezmoi
 alias dp='chezmoi update'
