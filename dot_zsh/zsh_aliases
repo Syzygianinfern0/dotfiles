@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # linux
-alias ls='exa'
+alias ls='eza'
 alias la='ls -lah'
 alias df='duf'
 

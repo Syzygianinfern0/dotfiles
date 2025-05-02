@@ -3,11 +3,11 @@
 for EACH in "$@"; do
     if [ -f "$EACH" ]; then
         echo "Uploading file $EACH."
-        rclone copy -P "$EACH" share-dump:
+        rclone copy --transfers 16 -P "$EACH" share-dump:
         rclone link share-dump:"$(basename "$EACH")"
     elif [ -d "$EACH" ]; then
         echo "Uploading folder $EACH."
-        rclone copy -P "$EACH" share-dump:"$(basename "$EACH")"
+        rclone copy --transfers 16 -P "$EACH" share-dump:"$(basename "$EACH")"
         rclone link share-dump:"$(basename "$EACH")"
     else
         echo "Invalid path $EACH."
