@@ -138,19 +138,19 @@ source ~/.zsh/zsh_aliases
 
 # >>> mamba initialize >>>
 # !! Contents within this block are managed by 'mamba shell init' !!
-export MAMBA_EXE="$HOME/miniforge3/bin/mamba";
-export MAMBA_ROOT_PREFIX="$HOME/miniforge3";
-__mamba_setup="$("$MAMBA_EXE" shell hook --shell zsh --root-prefix "$MAMBA_ROOT_PREFIX" 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__mamba_setup"
-else
-    alias mamba="$MAMBA_EXE"  # Fallback on help from mamba activate
-fi
-unset __mamba_setup
+# export MAMBA_EXE="$HOME/miniforge3/bin/mamba";
+# export MAMBA_ROOT_PREFIX="$HOME/miniforge3";
+# __mamba_setup="$("$MAMBA_EXE" shell hook --shell zsh --root-prefix "$MAMBA_ROOT_PREFIX" 2> /dev/null)"
+# if [ $? -eq 0 ]; then
+#     eval "$__mamba_setup"
+# else
+#     alias mamba="$MAMBA_EXE"  # Fallback on help from mamba activate
+# fi
+# unset __mamba_setup
 # <<< mamba initialize <<<
 
 # Make conda actually call mamba
-alias conda='mamba'
+# alias conda='mamba'
 
 # We are not doing the below anymore as of May 2, 2025. And I don't know why. 
 # Make conda actually call mamba. We have to delete the function defined by
@@ -174,30 +174,30 @@ alias conda='mamba'
 #     esac
 # }
 
-function pip() {
-    if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
-        echo "Not allowed in base"
-    else
-        command pip "$@"
-    fi
-}
+# function pip() {
+#     if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
+#         echo "Not allowed in base"
+#     else
+#         command pip "$@"
+#     fi
+# }
 
-function pip3() {
-    if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
-        echo "Not allowed in base"
-    else
-        command pip3 "$@"
-    fi
-}
+# function pip3() {
+#     if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
+#         echo "Not allowed in base"
+#     else
+#         command pip3 "$@"
+#     fi
+# }
 
-function extended_conda() {
-    if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
-        echo "Not allowed in base"
-    else
-        conda "$@"
-    fi
-}
-alias conda=extended_conda
+# function extended_conda() {
+#     if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
+#         echo "Not allowed in base"
+#     else
+#         mamba "$@"
+#     fi
+# }
+# alias conda=extended_conda
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
@@ -205,3 +205,20 @@ export NVM_DIR="$HOME/.nvm"
 
 # Added by Windsurf
 export PATH="/Users/ss99569/.codeium/windsurf/bin:$PATH"
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/ss99569/miniforge3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/ss99569/miniforge3/etc/profile.d/conda.sh" ]; then
+        . "/home/ss99569/miniforge3/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/ss99569/miniforge3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+
+# alias conda='mamba'

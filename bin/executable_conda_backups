@@ -7,7 +7,8 @@ SAVE_DIR="$HOME/.config/conda_envs"
 mkdir -p "$SAVE_DIR"
 
 # Get the list of conda environments
-source ~/mambaforge/etc/profile.d/conda.sh
+# source ~/mambaforge/etc/profile.d/conda.sh
+source ~/miniforge3/etc/profile.d/conda.sh
 envs=$(conda info -e | tail -n +3 | awk '{print $1}')
 
 # Display the available environments
