@@ -222,3 +222,6 @@ unset __conda_setup
 # <<< conda initialize <<<
 
 # alias conda='mamba'
+
+# Added by Antigravity
+export PATH="/Users/ss99569/.antigravity/antigravity/bin:$PATH"
