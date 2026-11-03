@@ -20,7 +20,6 @@ export BREW_PREFIX
 # ── PATH (prepended in reverse priority; ~/bin ends up first) ──────────
 [ -n "$BREW_PREFIX" ] && path=("$BREW_PREFIX/bin" "$BREW_PREFIX/sbin" $path)
 [[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
-[[ -d "$HOME/bin/linux_bin" ]] && path=("$HOME/bin/linux_bin" $path)
 [[ -d "$HOME/bin" ]] && path=("$HOME/bin" $path)
 
 # ── Machine-local env (NOT tracked by chezmoi/git) — this device only ──

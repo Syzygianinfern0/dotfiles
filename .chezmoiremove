@@ -1,3 +1,15 @@
 # Files no longer managed; removed from $HOME on `chezmoi apply`.
 .p10k.zsh
+.condarc
 bin/install_dots.sh
+bin/check_gpu
+bin/conda_backups
+bin/convert_vscode.py
+bin/gupload
+bin/install_conda.sh
+bin/linux_setup.sh
+bin/mac_setup.sh
+bin/send_mail.py
+bin/slgpus
+bin/ujgp
+bin/zsh_profile.sh

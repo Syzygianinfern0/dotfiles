@@ -1,6 +1,7 @@
 #!/bin/sh
-
+# Decrypt the age identity (passphrase-protected) on first apply.
+# Uses chezmoi's built-in age, so no separate `age` binary is needed.
 if [ ! -f "${HOME}/key.txt" ]; then
-    age --decrypt --output "${HOME}/key.txt" "{{ .chezmoi.sourceDir }}/key.txt.age"
+    "{{ .chezmoi.executable }}" age decrypt --passphrase --output "${HOME}/key.txt" "{{ .chezmoi.sourceDir }}/key.txt.age"
     chmod 600 "${HOME}/key.txt"
 fi

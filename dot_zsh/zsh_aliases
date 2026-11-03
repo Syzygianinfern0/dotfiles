@@ -1,57 +1,16 @@
 #!/bin/bash
 
-# linux
 alias df='duf'
-
-alias sizes="find . -type f -exec du -hs {} + | sort -rh | less"
-alias sizesd="find . -type d -exec du -h {} + | sort -rh | less"
-function lss() {
-    find . -mindepth 1 -type d -exec sh -c 'echo "{} : $(find "{}" -type f | wc -l)" file\(s\)' \;
-}
-alias pre-commit-setup='pre-commit install && wget "https://gist.githubusercontent.com/Syzygianinfern0/57d9493ba55a64df24e11f26049dbd07/raw/.pre-commit-config.yaml" && pre-commit autoupdate'
 
 # tmux
 alias tn='tmux new -s'
 alias ta='tmux a -t'
 alias tl='tmux ls'
 
-# conda
-alias ca='conda activate'
-alias ci='conda info -e'
-alias cc='conda clean -ay'
-alias cr='conda remove --all -y --name'
-
-# chezmoi
-alias dp='chezmoi update'
-alias da='chezmoi apply'
-alias dcd='chezmoi cd'
-alias ddiff='chezmoi diff'
-alias dm='chezmoi merge'
-
 # misc
 alias tb='tensorboard --logdir'
 alias jl='jupyter-lab'
 alias jnb='jupyter-notebook'
-
-# slurm
-alias slinfo="sinfo -o '%10P %12n %.5t %.4c %.6m %6G %35f %10L %8O %10E' -S '+P+N'"
-alias slqueue="squeue -o '%8i %10u %15j %4t %5D %15R %12b %3C %7m %10M %11l %11L' -S +M"
-
-alias mysinfo='s="features_act:45,NodeHost:15,StateCompact:12,Gres:12,GresUsed:12,Memory:12,FreeMem:12,CPUsState:16"; sinfo -O $s | head -n 1; sinfo -O $s | grep "ma-gpu\|ma-cpu" | sort -k5b,5 | sort -t "," -k2Vr,2 -s'
-alias mysqueue='s="%.12i %.20R %.20f %.35j %.17u %.15M %.15l"; squeue --format="${s}" | head -n 1; squeue --format="${s}" | grep "Priority\|Resources"; squeue --format="${s}" | grep "ma-gpu\|ma-cpu" | sort -k5b,5 -k6br,6'
-
-alias si="sinfo -o '%8P %10n %.11T %.4c %.8z %.6m %12G %10l %10L %10O %20E' -S '-P'"
-alias sig="si -p gpu"
-alias sic="si -p cpu"
-
-alias sq="squeue -Su -o '%8i %10u %20j %4t %5D %20R %15b %3C %7m %11l %11L'"
-alias sqg="sq -p gpu"
-alias sqc="sq -p cpu"
-alias squ="sq -u `id -un`"
-
-alias srun_cpu="srun --partition=cpu -c 32 --mem=250G --time 1440:00:00 --pty /bin/zsh"
-alias srun_a6000="srun --constraint=A6000 --gres=gpu:8 -c 48 --mem=375G --time 1440:00:00 --pty zsh"
-alias srun_2080ti="srun --constraint=RTX2080Ti --gres=gpu:8 -c 32 --mem=375G --time 1440:00:00 --pty zsh"
 
 # vid editing
 function dji_merge() {
