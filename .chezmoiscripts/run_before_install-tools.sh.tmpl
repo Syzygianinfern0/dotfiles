@@ -99,8 +99,10 @@ install_release() {
   [ -n "$url" ] || { warn "$name: no release asset found (rate-limited? set GITHUB_TOKEN)"; return 1; }
   mkdir -p "$d"; f="$d/${url##*/}"
   curl -fsSL -o "$f" "$url" && tar xf "$f" -C "$d" || { warn "$name: download/extract failed"; return 1; }
-  find "$d" -type f -name "$name" -exec install -m 755 {} "$BIN/$name" \; -quit
-  [ -x "$BIN/$name" ] && log "$name installed -> $BIN/$name"
+  local c; shopt -s globstar nullglob
+  for c in "$d"/**/"$name"; do [ -f "$c" ] && { install -m 755 "$c" "$BIN/$name"; break; }; done
+  if [ -x "$BIN/$name" ]; then log "$name installed -> $BIN/$name"
+  else warn "$name: binary not found in ${url##*/}"; return 1; fi
 }
 
 if [ -n "$ARCH" ]; then
