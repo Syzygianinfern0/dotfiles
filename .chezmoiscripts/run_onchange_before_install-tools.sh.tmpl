@@ -11,7 +11,7 @@
 #                     zsh plugins cloned into ~/.local/share/zsh/plugins.
 #
 # Re-runs whenever the tool list below changes:
-# tools hash: {{ list "starship" "zoxide" "fzf" "eza" "bat" "duf" "dust" "btop" "rclone" "zsh-autosuggestions" "zsh-fast-syntax-highlighting" "zsh-autocomplete" "fallback-v2" | join "," | sha256sum }}
+# tools hash: {{ list "starship" "zoxide" "fzf" "eza" "bat" "duf" "dust" "btop" "zsh-autosuggestions" "zsh-fast-syntax-highlighting" "zsh-autocomplete" "fallback-v3" | join "," | sha256sum }}
 
 echo "==> chezmoi bootstrap: ensuring shell tools are installed"
 log()  { printf '    %s\n' "$*"; }
@@ -38,7 +38,7 @@ fi
 
 if [ -n "$BREW" ]; then
   eval "$("$BREW" shellenv)" 2>/dev/null || true
-  "$BREW" install starship zoxide fzf eza bat duf dust btop rclone \
+  "$BREW" install starship zoxide fzf eza bat duf dust btop \
     zsh-autosuggestions zsh-fast-syntax-highlighting zsh-autocomplete \
     || warn "One or more formulae failed to install; continuing anyway."
 {{- if eq .chezmoi.os "darwin" }}
@@ -71,19 +71,13 @@ gh_asset() {
 }
 
 # install_release <name> <owner/repo> <regex>: downloads the latest release
-# archive (.tar.gz/.tbz/.zip), extracts it and copies the binary into $BIN.
+# archive (.tar.gz/.tbz), extracts it and copies the binary into $BIN.
 install_release() {
   local url f d="$TMP/$1"; url="$(gh_asset "$2" "$3")"
   [ -n "$url" ] || { warn "$1: no release asset found"; return 1; }
   mkdir -p "$d"; f="$d/${url##*/}"
   curl -fsSL -o "$f" "$url" || { warn "$1: download failed"; return 1; }
-  case "$f" in
-    *.zip) if have unzip; then unzip -q "$f" -d "$d"
-           elif have python3; then python3 -m zipfile -e "$f" "$d"
-           elif have bsdtar; then bsdtar xf "$f" -C "$d"
-           else warn "$1: needs unzip, python3 or bsdtar to extract"; false; fi ;;
-    *)     tar xf "$f" -C "$d" ;;
-  esac || { warn "$1: extract failed"; return 1; }
+  tar xf "$f" -C "$d" || { warn "$1: extract failed"; return 1; }
   find "$d" -type f -name "$1" -exec install -m 755 {} "$BIN/$1" \; -quit
   [ -x "$BIN/$1" ] && log "$1 installed -> $BIN/$1"
 }
@@ -100,7 +94,6 @@ if [ -n "$ARCH" ]; then
   have duf    || install_release duf muesli/duf "duf_.*_linux_${DUFARCH}\.tar\.gz$" || true
   have dust   || install_release dust bootandy/dust "dust-v.*-${ARCH}-unknown-linux-(musl|gnu)\.tar\.gz$" || true
   have btop   || install_release btop aristocratos/btop "btop-${ARCH}-(unknown-)?linux-musl\.(tar\.gz|tbz)$" || true
-  have rclone || install_release rclone rclone/rclone "rclone-v.*-linux-${GOARCH}\.zip$" || true
 fi
 
 clone_plugin() {

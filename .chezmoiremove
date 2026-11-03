@@ -13,3 +13,4 @@ bin/send_mail.py
 bin/slgpus
 bin/ujgp
 bin/zsh_profile.sh
+.config/rclone/rclone.conf
