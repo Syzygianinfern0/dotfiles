@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# chezmoi bootstrap — installs the shell tool stack. Runs on every apply but
+# exits immediately when everything is already present, so failed installs
+# (no network, rate limits) are retried on the next apply.
+#
+# RESILIENT BY DESIGN: install failures are logged but NEVER abort
+# `chezmoi apply`; the shell config guards every tool/plugin. Always exits 0.
+#
+#   macOS:            Homebrew (installed if missing).
+#   Linux with brew:  Homebrew (linuxbrew); falls through if brew fails.
+#   Linux, no brew:   user-local fallback, no sudo — binaries into ~/.local/bin,
+#                     zsh plugins cloned into ~/.local/share/zsh/plugins.
+#                     Set GITHUB_TOKEN to avoid GitHub API rate limits.
+
+TOOLS="starship zoxide fzf eza bat duf dust btop git-lfs"
+BIN="$HOME/.local/bin"
+PLUG="$HOME/.local/share/zsh/plugins"
+export PATH="$BIN:$PATH"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+log()  { printf '    %s\n' "$*"; }
+warn() { printf '    [warn] %s\n' "$*" >&2; }
+
+find_brew() {
+  for c in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew "$HOME/.linuxbrew/bin/brew"; do
+    [ -x "$c" ] && { echo "$c"; return; }
+  done
+  command -v brew 2>/dev/null
+}
+BREW="$(find_brew)"
+[ -n "$BREW" ] && eval "$("$BREW" shellenv)" 2>/dev/null
+
+# plugin_ok <brew-relative path> <fallback path>
+plugin_ok() { { [ -n "${HOMEBREW_PREFIX:-}" ] && [ -r "$HOMEBREW_PREFIX/$1" ]; } || [ -r "$PLUG/$2" ]; }
+
+all_present() {
+  local t; for t in $TOOLS; do have "$t" || return 1; done
+  fzf --zsh >/dev/null 2>&1 || return 1                   # fzf too old for `--zsh`
+  plugin_ok share/zsh-autosuggestions/zsh-autosuggestions.zsh zsh-autosuggestions/zsh-autosuggestions.zsh &&
+  plugin_ok opt/zsh-fast-syntax-highlighting/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh &&
+  plugin_ok share/zsh-autocomplete/zsh-autocomplete.plugin.zsh zsh-autocomplete/zsh-autocomplete.plugin.zsh
+}
+all_present && exit 0
+
+echo "==> chezmoi bootstrap: installing missing shell tools"
+
+{{ if eq .chezmoi.os "darwin" -}}
+if [ -z "$BREW" ]; then
+  log "Homebrew not found; attempting non-interactive install..."
+  NONINTERACTIVE=1 /bin/bash -c \
+    "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+    || warn "Homebrew install failed."
+  BREW="$(find_brew)"
+  [ -n "$BREW" ] && eval "$("$BREW" shellenv)" 2>/dev/null
+fi
+{{ end -}}
+
+if [ -n "$BREW" ]; then
+  if "$BREW" install $TOOLS zsh-autosuggestions zsh-fast-syntax-highlighting zsh-autocomplete; then
+{{- if eq .chezmoi.os "darwin" }}
+    "$BREW" install --cask font-meslo-lg-nerd-font || warn "font cask install skipped."
+{{- end }}
+    echo "==> bootstrap done (Homebrew)."
+    exit 0
+  fi
+  warn "brew install failed (e.g. shared, read-only linuxbrew); trying user-local fallback."
+fi
+
+# ── No-brew fallback (Linux clusters / no sudo) ───────────────────────
+log "Using user-local fallback (~/.local/bin)."
+mkdir -p "$BIN" "$PLUG"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+
+case "$(uname -m)" in
+  x86_64|amd64)  ARCH=x86_64;  GOARCH=amd64; DUFARCH=x86_64 ;;
+  aarch64|arm64) ARCH=aarch64; GOARCH=arm64; DUFARCH=arm64 ;;
+  *) ARCH=""; warn "Unknown arch $(uname -m); skipping binary downloads." ;;
+esac
+
+GH_AUTH=(); [ -n "${GITHUB_TOKEN:-}" ] && GH_AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
+
+# gh_asset <owner/repo> <regex>... -> URL of the first asset matching the
+# earliest regex (so list musl before gnu to prefer static builds).
+gh_asset() {
+  local repo="$1" urls re u; shift
+  urls="$(curl -fsSL "${GH_AUTH[@]}" "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
+    | grep -o '"browser_download_url": *"[^"]*"' | cut -d'"' -f4)"
+  for re in "$@"; do
+    u="$(printf '%s\n' "$urls" | grep -E "$re" | head -1)"
+    [ -n "$u" ] && { echo "$u"; return; }
+  done
+}
+
+# install_release <name> <owner/repo> <regex>...: downloads the latest release
+# tarball, extracts it and copies the binary into $BIN.
+install_release() {
+  local name="$1" repo="$2" url f d; shift 2; d="$TMP/$name"
+  url="$(gh_asset "$repo" "$@")"
+  [ -n "$url" ] || { warn "$name: no release asset found (rate-limited? set GITHUB_TOKEN)"; return 1; }
+  mkdir -p "$d"; f="$d/${url##*/}"
+  curl -fsSL -o "$f" "$url" && tar xf "$f" -C "$d" || { warn "$name: download/extract failed"; return 1; }
+  find "$d" -type f -name "$name" -exec install -m 755 {} "$BIN/$name" \; -quit
+  [ -x "$BIN/$name" ] && log "$name installed -> $BIN/$name"
+}
+
+if [ -n "$ARCH" ]; then
+  have starship || curl -fsSL https://starship.rs/install.sh | sh -s -- -y -b "$BIN" >/dev/null \
+    || warn "starship install failed"
+  have zoxide || curl -fsSL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh \
+    | sh -s -- --bin-dir "$BIN" >/dev/null || warn "zoxide install failed"
+  fzf --zsh >/dev/null 2>&1 || install_release fzf junegunn/fzf "linux_${GOARCH}\.tar\.gz$"
+  have eza     || install_release eza eza-community/eza "eza_${ARCH}-unknown-linux-musl\.tar\.gz$" "eza_${ARCH}-unknown-linux-gnu\.tar\.gz$"
+  have bat     || install_release bat sharkdp/bat "bat-v.*-${ARCH}-unknown-linux-musl\.tar\.gz$" "bat-v.*-${ARCH}-unknown-linux-gnu\.tar\.gz$"
+  have duf     || install_release duf muesli/duf "duf_.*_linux_${DUFARCH}\.tar\.gz$"
+  have dust    || install_release dust bootandy/dust "dust-v.*-${ARCH}-unknown-linux-musl\.tar\.gz$" "dust-v.*-${ARCH}-unknown-linux-gnu\.tar\.gz$"
+  have btop    || install_release btop aristocratos/btop "btop-${ARCH}-(unknown-)?linux-musl\.(tar\.gz|tbz)$"
+  have git-lfs || install_release git-lfs git-lfs/git-lfs "git-lfs-linux-${GOARCH}-v.*\.tar\.gz$"
+fi
+
+clone_plugin() {
+  [ -d "$PLUG/$1" ] && return 0
+  git clone -q --depth=1 "$2" "$PLUG/$1" && log "plugin $1 -> $PLUG/$1" || warn "plugin $1 clone failed"
+}
+if have git; then
+  clone_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions
+  clone_plugin fast-syntax-highlighting https://github.com/zdharma-continuum/fast-syntax-highlighting
+  clone_plugin zsh-autocomplete https://github.com/marlonrichert/zsh-autocomplete
+else
+  warn "git not found; skipping zsh plugins."
+fi
+
+echo "==> bootstrap done (fallback)."
+exit 0

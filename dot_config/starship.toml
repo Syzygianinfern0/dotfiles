@@ -11,9 +11,7 @@ $git_branch\
 $git_status\
 $nodejs\
 $python\
-$php\
 $golang\
-$rust\
 $cmd_duration\
 $line_break\
 $character"""
@@ -21,7 +19,6 @@ $character"""
 [character]
 success_symbol = "[❯](bold green)"
 error_symbol = "[❯](bold red)"
-vimcmd_symbol = "[❮](bold yellow)"
 
 [hostname]
 ssh_only = true              # show only when connected over SSH
@@ -66,13 +63,5 @@ symbol = " "
 format = '[$symbol($version )(\($virtualenv\) )]($style)'
 
 [golang]
-symbol = " "
-format = "[$symbol($version )]($style)"
-
-[rust]
-symbol = " "
-format = "[$symbol($version )]($style)"
-
-[php]
 symbol = " "
 format = "[$symbol($version )]($style)"

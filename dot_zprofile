@@ -1,0 +1,7 @@
+# ~/.zprofile — managed by chezmoi. Login shells only: /etc/zprofile (macOS
+# path_helper, Linux /etc/profile) runs after ~/.zshenv and reorders PATH, so
+# re-assert our order here. Covers `zsh -l -c` (IDEs, launchd) too.
+typeset -U path
+[ -n "$BREW_PREFIX" ] && path=("$BREW_PREFIX/bin" "$BREW_PREFIX/sbin" $path)
+[[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
+[[ -d "$HOME/bin" ]] && path=("$HOME/bin" $path)

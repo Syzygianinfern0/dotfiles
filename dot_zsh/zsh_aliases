@@ -1,5 +1,3 @@
-#!/bin/bash
-
 command -v duf &>/dev/null && alias df='duf'
 
 # tmux

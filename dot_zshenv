@@ -1,19 +1,18 @@
-# ~/.zshenv — managed by chezmoi.
-# Sourced by EVERY zsh: interactive, non-interactive (`ssh host cmd`), scripts,
-# cron. PATH + $BREW_PREFIX live here (not only in .zshrc) so tools resolve
-# in non-interactive shells too, not just interactive terminals.
+# ~/.zshenv — managed by chezmoi. Sourced by EVERY zsh (interactive,
+# non-interactive, scripts), so PATH lives here. Login shells re-assert it in
+# ~/.zprofile because /etc/zprofile (macOS path_helper) reorders it.
 
 typeset -U path   # auto-dedupe entries
 
-# ── Homebrew prefix (auto-detected; portable macOS + Linux linuxbrew) ──
+# ── Homebrew prefix (macOS Apple Silicon/Intel, linuxbrew system/user) ─
 if [ -d /opt/homebrew ]; then
-  BREW_PREFIX=/opt/homebrew                       # macOS Apple Silicon
+  BREW_PREFIX=/opt/homebrew
 elif [ -d /usr/local/Homebrew ]; then
-  BREW_PREFIX=/usr/local                          # macOS Intel
+  BREW_PREFIX=/usr/local
 elif [ -d /home/linuxbrew/.linuxbrew ]; then
-  BREW_PREFIX=/home/linuxbrew/.linuxbrew          # Linux (linuxbrew)
-elif command -v brew >/dev/null 2>&1; then
-  BREW_PREFIX="$(brew --prefix)"                  # fallback
+  BREW_PREFIX=/home/linuxbrew/.linuxbrew
+elif [ -d "$HOME/.linuxbrew" ]; then
+  BREW_PREFIX="$HOME/.linuxbrew"
 fi
 export BREW_PREFIX
 
@@ -21,6 +20,11 @@ export BREW_PREFIX
 [ -n "$BREW_PREFIX" ] && path=("$BREW_PREFIX/bin" "$BREW_PREFIX/sbin" $path)
 [[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
 [[ -d "$HOME/bin" ]] && path=("$HOME/bin" $path)
+
+export EDITOR=nano
+
+# Ubuntu's /etc/zsh/zshrc runs compinit itself; let zsh-autocomplete do it.
+skip_global_compinit=1
 
 # ── Machine-local env (NOT tracked by chezmoi/git) — this device only ──
 [ -r "$HOME/.config/zsh/env.local" ] && source "$HOME/.config/zsh/env.local"

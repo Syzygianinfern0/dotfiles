@@ -1,15 +1,5 @@
-# ~/.zshrc — managed by chezmoi (Starship + curated plugins)
-# Portable across macOS (/opt/homebrew), linuxbrew, and no-brew Linux hosts
-# (tools in ~/.local/bin, plugins in ~/.local/share/zsh/plugins).
-# PATH is set in ~/.zshenv, but for LOGIN shells /etc/zprofile (macOS
-# path_helper) runs AFTER it and reorders PATH — so re-assert it here.
-typeset -U path
-[ -n "$BREW_PREFIX" ] && path=("$BREW_PREFIX/bin" "$BREW_PREFIX/sbin" $path)
-[[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
-[[ -d "$HOME/bin" ]] && path=("$HOME/bin" $path)
-
-# ── Secrets (machine-local, NOT tracked by chezmoi/git) ───────────────
-[ -r "$HOME/.config/zsh/secrets.zsh" ] && source "$HOME/.config/zsh/secrets.zsh"
+# ~/.zshrc — managed by chezmoi (Starship + curated plugins). PATH is set in
+# ~/.zshenv / ~/.zprofile. Plugins come from brew or ~/.local/share/zsh/plugins.
 
 # Source the first existing file from a list of candidate plugin paths.
 _zsrc() { local f; for f in "$@"; do [ -r "$f" ] && { source "$f"; return 0; }; done; return 1; }
@@ -36,9 +26,6 @@ bindkey -e                              # emacs keymap (arrow/word motions)
 WORDCHARS=${WORDCHARS//[\/]/}
 bindkey '^[^?' backward-kill-word       # Option+Backspace (iTerm2 Left Option = "Esc+")
 bindkey '^[^H' backward-kill-word
-bindkey '^U' kill-whole-line            # Cmd+Backspace mapped to 0x15 in iTerm2
-bindkey '^[b' backward-word             # Option+Left
-bindkey '^[f' forward-word              # Option+Right
 
 # ── Completion ────────────────────────────────────────────────────────
 [ -n "$BREW_PREFIX" ] && FPATH="$BREW_PREFIX/share/zsh/site-functions:$FPATH"
@@ -62,25 +49,16 @@ zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # case-insensitive
 _zsrc "$BREW_PREFIX/opt/zsh-fast-syntax-highlighting/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh" \
       "$_ZPLUG/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh"
 
-# zsh-autocomplete runs compinit itself. Tab = top match · Down = menu · Up = history menu
-_zsrc "$BREW_PREFIX/share/zsh-autocomplete/zsh-autocomplete.plugin.zsh" \
+# zsh-autocomplete (runs compinit itself; Up = history menu). Needs zsh >= 5.8.
+autoload -Uz is-at-least
+is-at-least 5.8 && _zsrc "$BREW_PREFIX/share/zsh-autocomplete/zsh-autocomplete.plugin.zsh" \
       "$_ZPLUG/zsh-autocomplete/zsh-autocomplete.plugin.zsh"
 
 # Fallback: if zsh-autocomplete wasn't loaded, run compinit ourselves.
 (( $+functions[compdef] )) || { autoload -Uz compinit && compinit; }
 
 # ── fzf (fuzzy finder): Ctrl-R history, Ctrl-T files, Alt-C cd ─────────
-if command -v fzf &>/dev/null; then
-  if fzf --zsh &>/dev/null; then
-    eval "$(fzf --zsh)"                                    # fzf >= 0.48
-  else
-    # Older fzf (e.g. Debian apt 0.38) has no --zsh; source shipped integration
-    for _f in /usr/share/doc/fzf/examples/{key-bindings,completion}.zsh; do
-      [ -r "$_f" ] && source "$_f"
-    done
-    unset _f
-  fi
-fi
+command -v fzf &>/dev/null && eval "$(fzf --zsh 2>/dev/null)"
 
 # ── zoxide (smarter cd; use `z <dir>` and `zi` for interactive) ────────
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
@@ -113,6 +91,6 @@ bindkey '^ ' autosuggest-accept                 # Ctrl-Space to accept
 # ── Starship prompt ───────────────────────────────────────────────────
 command -v starship &>/dev/null && eval "$(starship init zsh)"
 
-# ── Per-machine overrides (machine-local, NOT tracked) — sourced last ──
+# ── Per-machine overrides + secrets (machine-local, NOT tracked) ───────
 [ -r "$HOME/.config/zsh/local.zsh" ] && source "$HOME/.config/zsh/local.zsh"
 unset -f _zsrc; unset _ZPLUG
