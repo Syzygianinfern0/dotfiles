@@ -78,7 +78,10 @@ install_release() {
   mkdir -p "$d"; f="$d/${url##*/}"
   curl -fsSL -o "$f" "$url" || { warn "$1: download failed"; return 1; }
   case "$f" in
-    *.zip) if have unzip; then unzip -q "$f" -d "$d"; else python3 -m zipfile -e "$f" "$d"; fi ;;
+    *.zip) if have unzip; then unzip -q "$f" -d "$d"
+           elif have python3; then python3 -m zipfile -e "$f" "$d"
+           elif have bsdtar; then bsdtar xf "$f" -C "$d"
+           else warn "$1: needs unzip, python3 or bsdtar to extract"; false; fi ;;
     *)     tar xf "$f" -C "$d" ;;
   esac || { warn "$1: extract failed"; return 1; }
   find "$d" -type f -name "$1" -exec install -m 755 {} "$BIN/$1" \; -quit
@@ -96,7 +99,7 @@ if [ -n "$ARCH" ]; then
   have bat    || install_release bat sharkdp/bat "bat-v.*-${ARCH}-unknown-linux-(musl|gnu)\.tar\.gz$" || true
   have duf    || install_release duf muesli/duf "duf_.*_linux_${DUFARCH}\.tar\.gz$" || true
   have dust   || install_release dust bootandy/dust "dust-v.*-${ARCH}-unknown-linux-(musl|gnu)\.tar\.gz$" || true
-  have btop   || install_release btop aristocratos/btop "btop-${ARCH}-(unknown-)?linux-musl\.tbz$" || true
+  have btop   || install_release btop aristocratos/btop "btop-${ARCH}-(unknown-)?linux-musl\.(tar\.gz|tbz)$" || true
   have rclone || install_release rclone rclone/rclone "rclone-v.*-linux-${GOARCH}\.zip$" || true
 fi
 
