@@ -1,2 +1,7 @@
 README.md
 key.txt.age
+
+# Machine-local shell files sourced by .zshenv/.zshrc — never synced.
+.config/zsh/env.local
+.config/zsh/local.zsh
+.config/zsh/secrets.zsh

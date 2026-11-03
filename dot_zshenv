@@ -1,0 +1,27 @@
+# ~/.zshenv — managed by chezmoi.
+# Sourced by EVERY zsh: interactive, non-interactive (`ssh host cmd`), scripts,
+# cron. PATH + $BREW_PREFIX live here (not only in .zshrc) so tools resolve
+# in non-interactive shells too, not just interactive terminals.
+
+typeset -U path   # auto-dedupe entries
+
+# ── Homebrew prefix (auto-detected; portable macOS + Linux linuxbrew) ──
+if [ -d /opt/homebrew ]; then
+  BREW_PREFIX=/opt/homebrew                       # macOS Apple Silicon
+elif [ -d /usr/local/Homebrew ]; then
+  BREW_PREFIX=/usr/local                          # macOS Intel
+elif [ -d /home/linuxbrew/.linuxbrew ]; then
+  BREW_PREFIX=/home/linuxbrew/.linuxbrew          # Linux (linuxbrew)
+elif command -v brew >/dev/null 2>&1; then
+  BREW_PREFIX="$(brew --prefix)"                  # fallback
+fi
+export BREW_PREFIX
+
+# ── PATH (prepended in reverse priority; ~/bin ends up first) ──────────
+[ -n "$BREW_PREFIX" ] && path=("$BREW_PREFIX/bin" "$BREW_PREFIX/sbin" $path)
+[[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
+[[ -d "$HOME/bin/linux_bin" ]] && path=("$HOME/bin/linux_bin" $path)
+[[ -d "$HOME/bin" ]] && path=("$HOME/bin" $path)
+
+# ── Machine-local env (NOT tracked by chezmoi/git) — this device only ──
+[ -r "$HOME/.config/zsh/env.local" ] && source "$HOME/.config/zsh/env.local"

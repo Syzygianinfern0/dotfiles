@@ -1,202 +1,110 @@
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+# ~/.zshrc — managed by chezmoi (Starship + curated plugins)
+# Portable across macOS (/opt/homebrew), linuxbrew, and no-brew Linux hosts
+# (tools in ~/.local/bin, plugins in ~/.local/share/zsh/plugins).
+# PATH is set in ~/.zshenv, but for LOGIN shells /etc/zprofile (macOS
+# path_helper) runs AFTER it and reorders PATH — so re-assert it here.
+typeset -U path
+[ -n "$BREW_PREFIX" ] && path=("$BREW_PREFIX/bin" "$BREW_PREFIX/sbin" $path)
+[[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
+[[ -d "$HOME/bin/linux_bin" ]] && path=("$HOME/bin/linux_bin" $path)
+[[ -d "$HOME/bin" ]] && path=("$HOME/bin" $path)
+
+# ── Secrets (machine-local, NOT tracked by chezmoi/git) ───────────────
+[ -r "$HOME/.config/zsh/secrets.zsh" ] && source "$HOME/.config/zsh/secrets.zsh"
+
+# Source the first existing file from a list of candidate plugin paths.
+_zsrc() { local f; for f in "$@"; do [ -r "$f" ] && { source "$f"; return 0; }; done; return 1; }
+_ZPLUG="$HOME/.local/share/zsh/plugins"
+
+# ── History ───────────────────────────────────────────────────────────
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt SHARE_HISTORY          # share history across sessions live
+setopt HIST_IGNORE_ALL_DUPS   # drop older duplicate entries
+setopt HIST_IGNORE_SPACE      # don't record commands starting with a space
+setopt HIST_REDUCE_BLANKS     # trim superfluous whitespace
+setopt EXTENDED_HISTORY       # record timestamps
+
+# ── Navigation / QoL options ──────────────────────────────────────────
+setopt AUTO_CD                # `foo` == `cd foo` if foo is a dir
+setopt INTERACTIVE_COMMENTS   # allow # comments in interactive shell
+
+# ── Key bindings ──────────────────────────────────────────────────────
+bindkey -e                              # emacs keymap (arrow/word motions)
+# Treat '/' as a word boundary so word-wise motions/deletes act on one
+# path segment at a time (e.g. Option+Backspace deletes one directory).
+WORDCHARS=${WORDCHARS//[\/]/}
+bindkey '^[^?' backward-kill-word       # Option+Backspace (iTerm2 Left Option = "Esc+")
+bindkey '^[^H' backward-kill-word
+bindkey '^U' kill-whole-line            # Cmd+Backspace mapped to 0x15 in iTerm2
+bindkey '^[b' backward-word             # Option+Left
+bindkey '^[f' forward-word              # Option+Right
+
+# ── Completion ────────────────────────────────────────────────────────
+[ -n "$BREW_PREFIX" ] && FPATH="$BREW_PREFIX/share/zsh/site-functions:$FPATH"
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # case-insensitive
+
+# Feed ~/.ssh/config Host aliases (+ known_hosts) to completion so they
+# complete and highlight as valid.
+() {
+  local -aU _cfg_hosts
+  [[ -r ~/.ssh/config ]] && _cfg_hosts+=(
+    ${(f)"$(awk 'tolower($1)=="host"{for(i=2;i<=NF;i++) if($i !~ /[*?]/) print $i}' ~/.ssh/config)"}
+  )
+  [[ -r ~/.ssh/known_hosts ]] && _cfg_hosts+=(
+    ${${${${(f)"$(<~/.ssh/known_hosts)"}:#[|#]*}%%\ *}%%,*}
+  )
+  (( $#_cfg_hosts )) && zstyle ':completion:*:hosts' hosts $_cfg_hosts
+}
+
+# fast-syntax-highlighting must be sourced BEFORE zsh-autocomplete (otherwise
+# "unhandled ZLE widget" warnings).
+_zsrc "$BREW_PREFIX/opt/zsh-fast-syntax-highlighting/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh" \
+      "$_ZPLUG/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh"
+
+# zsh-autocomplete runs compinit itself. Tab = top match · Down = menu · Up = history menu
+_zsrc "$BREW_PREFIX/share/zsh-autocomplete/zsh-autocomplete.plugin.zsh" \
+      "$_ZPLUG/zsh-autocomplete/zsh-autocomplete.plugin.zsh"
+
+# Fallback: if zsh-autocomplete wasn't loaded, run compinit ourselves.
+(( $+functions[compdef] )) || { autoload -Uz compinit && compinit; }
+
+# ── fzf (fuzzy finder): Ctrl-R history, Ctrl-T files, Alt-C cd ─────────
+if command -v fzf &>/dev/null; then
+  if fzf --zsh &>/dev/null; then
+    eval "$(fzf --zsh)"                                    # fzf >= 0.48
+  else
+    # Older fzf (e.g. Debian apt 0.38) has no --zsh; source shipped integration
+    for _f in /usr/share/doc/fzf/examples/{key-bindings,completion}.zsh; do
+      [ -r "$_f" ] && source "$_f"
+    done
+    unset _f
+  fi
 fi
 
-# If you come from bash you might have to change your $PATH.
-export PATH=$HOME/bin:$HOME/bin/linux_bin:$HOME/.local/bin:/usr/local/bin:$PATH
+# ── zoxide (smarter cd; use `z <dir>` and `zi` for interactive) ────────
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
 
-# Path to your oh-my-zsh installation.
-export ZSH="$HOME/.oh-my-zsh"
+# ── Aliases (eza + bat replacements) ──────────────────────────────────
+if command -v eza &>/dev/null; then
+  alias ls='eza --group-directories-first --icons=auto'
+  alias ll='eza -lg --group-directories-first --icons=auto'
+  alias la='eza -lag --group-directories-first --icons=auto'
+  alias lt='eza --tree --level=2 --icons=auto'
+fi
+if command -v bat &>/dev/null; then
+  alias cat='bat --paging=never'
+  export BAT_THEME="ansi"
+fi
 
-# Set name of the theme to load --- if set to "random", it will
-# load a random theme each time oh-my-zsh is loaded, in which case,
-# to know which specific one was loaded, run: echo $RANDOM_THEME
-# See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-# ZSH_THEME="robbyrussell"
-ZSH_THEME="powerlevel10k/powerlevel10k"
+# brew: update definitions, upgrade formulae, then clean up old versions
+alias brewup='brew update && brew upgrade && brew cleanup'
 
-# Set list of themes to pick from when loading at random
-# Setting this variable when ZSH_THEME=random will cause zsh to load
-# a theme from this variable instead of looking in $ZSH/themes/
-# If set to an empty array, this variable will have no effect.
-# ZSH_THEME_RANDOM_CANDIDATES=( "robbyrussell" "agnoster" )
+# Personal aliases/functions (tmux, conda, chezmoi, slurm, DJI, ...)
+[ -r ~/.zsh/zsh_aliases ] && source ~/.zsh/zsh_aliases
 
-# Uncomment the following line to use case-sensitive completion.
-# CASE_SENSITIVE="true"
-
-# Uncomment the following line to use hyphen-insensitive completion.
-# Case-sensitive completion must be off. _ and - will be interchangeable.
-# HYPHEN_INSENSITIVE="true"
-
-# Uncomment one of the following lines to change the auto-update behavior
-zstyle ':omz:update' mode disabled  # disable automatic updates
-# zstyle ':omz:update' mode auto # update automatically without asking
-# zstyle ':omz:update' mode reminder  # just remind me to update when it's time
-
-# Uncomment the following line to change how often to auto-update (in days).
-zstyle ':omz:update' frequency 14 # check for updates every 2 weeks
-
-# Uncomment the following line if pasting URLs and other text is messed up.
-# DISABLE_MAGIC_FUNCTIONS="true"
-
-# Uncomment the following line to disable colors in ls.
-# DISABLE_LS_COLORS="true"
-
-# Uncomment the following line to disable auto-setting terminal title.
-# DISABLE_AUTO_TITLE="true"
-
-# Uncomment the following line to enable command auto-correction.
-ENABLE_CORRECTION="true"
-
-# Uncomment the following line to display red dots whilst waiting for completion.
-# You can also set it to another string to have that shown instead of the default red dots.
-# e.g. COMPLETION_WAITING_DOTS="%F{yellow}waiting...%f"
-# Caution: this setting can cause issues with multiline prompts in zsh < 5.7.1 (see #5765)
-COMPLETION_WAITING_DOTS="true"
-
-# Uncomment the following line if you want to disable marking untracked files
-# under VCS as dirty. This makes repository status check for large repositories
-# much, much faster.
-# DISABLE_UNTRACKED_FILES_DIRTY="true"
-
-# Uncomment the following line if you want to change the command execution time
-# stamp shown in the history command output.
-# You can set one of the optional three formats:
-# "mm/dd/yyyy"|"dd.mm.yyyy"|"yyyy-mm-dd"
-# or set a custom format using the strftime function format specifications,
-# see 'man strftime' for details.
-# HIST_STAMPS="mm/dd/yyyy"
-
-# Would you like to use another custom folder than $ZSH/custom?
-# ZSH_CUSTOM=/path/to/new-custom-folder
-
-# Which plugins would you like to load?
-# Standard plugins can be found in $ZSH/plugins/
-# Custom plugins may be added to $ZSH_CUSTOM/plugins/
-# Example format: plugins=(rails git textmate ruby lighthouse)
-# Add wisely, as too many plugins slow down shell startup.
-plugins=(
-    git
-    brew
-    copyfile # copy file contents to clipboard
-    copypath # copy path of current directory
-    cp # copy but with rsync (call cvp)
-    docker
-    docker-compose
-    # dotenv
-    extract
-    macos
-    magic-enter # enter buttun runs ls or git status
-    perms # reserperms command to 755 and 644 recursively
-    conda-zsh-completion
-    zsh-autosuggestions
-    zsh-syntax-highlighting
-    zsh-history-substring-search
-)
-
-fpath+=${ZSH_CUSTOM:-${ZSH:-~/.oh-my-zsh}/custom}/plugins/zsh-completions/src
-source $ZSH/oh-my-zsh.sh
-bindkey '^[[A' history-substring-search-up
-bindkey '^[[B' history-substring-search-down
-[[ -n "$terminfo[kcuu1]" ]] && bindkey "$terminfo[kcuu1]" history-substring-search-up
-[[ -n "$terminfo[kcud1]" ]] && bindkey "$terminfo[kcud1]" history-substring-search-down
-
-# User configuration
-
-# export MANPATH="/usr/local/man:$MANPATH"
-
-# You may need to manually set your language environment
-# export LANG=en_US.UTF-8
-
-# Preferred editor for local and remote sessions
-# if [[ -n $SSH_CONNECTION ]]; then
-#   export EDITOR='vim'
-# else
-#   export EDITOR='mvim'
-# fi
-
-# Compilation flags
-# export ARCHFLAGS="-arch x86_64"
-
-# Set personal aliases, overriding those provided by oh-my-zsh libs,
-# plugins, and themes. Aliases can be placed here, though oh-my-zsh
-# users are encouraged to define aliases within the ZSH_CUSTOM folder.
-# For a full list of active aliases, run `alias`.
-#
-# Example aliases
-# alias zshconfig="mate ~/.zshrc"
-# alias ohmyzsh="mate ~/.oh-my-zsh"
-source ~/.zsh/zsh_aliases
-
-# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
-
-# >>> mamba initialize >>>
-# !! Contents within this block are managed by 'mamba shell init' !!
-# export MAMBA_EXE="$HOME/miniforge3/bin/mamba";
-# export MAMBA_ROOT_PREFIX="$HOME/miniforge3";
-# __mamba_setup="$("$MAMBA_EXE" shell hook --shell zsh --root-prefix "$MAMBA_ROOT_PREFIX" 2> /dev/null)"
-# if [ $? -eq 0 ]; then
-#     eval "$__mamba_setup"
-# else
-#     alias mamba="$MAMBA_EXE"  # Fallback on help from mamba activate
-# fi
-# unset __mamba_setup
-# <<< mamba initialize <<<
-
-# Make conda actually call mamba
-# alias conda='mamba'
-
-# We are not doing the below anymore as of May 2, 2025. And I don't know why. 
-# Make conda actually call mamba. We have to delete the function defined by
-# the conda init stuff above and redefine it so that it calls mamba except
-# when doing activate/deactivate
-# unset conda
-# conda ()
-# {
-#     \local cmd="${1-__missing__}";
-#     case "$cmd" in
-#         activate | deactivate)
-#             __conda_activate "$@"
-#             ;;
-#         install | update | upgrade | remove | uninstall)
-#             mamba "$@" || \return;
-#             __conda_reactivate
-#             ;;
-#         *)
-#             mamba "$@"
-#             ;;
-#     esac
-# }
-
-# function pip() {
-#     if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
-#         echo "Not allowed in base"
-#     else
-#         command pip "$@"
-#     fi
-# }
-
-# function pip3() {
-#     if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
-#         echo "Not allowed in base"
-#     else
-#         command pip3 "$@"
-#     fi
-# }
-
-# function extended_conda() {
-#     if [ "${CONDA_PROMPT_MODIFIER-}" = "(base) " ] && [ "$1" = "install" ]; then
-#         echo "Not allowed in base"
-#     else
-#         mamba "$@"
-#     fi
-# }
-# alias conda=extended_conda
-
+# ── nvm (lazy-loaded on first use of nvm/node/npm/...) ────────────────
 export NVM_DIR="$HOME/.nvm"
 load-nvm() {
     unset -f load-nvm nvm node npm npx yarn pnpm
@@ -210,11 +118,7 @@ npx() { load-nvm; npx "$@"; }
 yarn() { load-nvm; yarn "$@"; }
 pnpm() { load-nvm; pnpm "$@"; }
 
-# Added by Windsurf
-export PATH="/Users/ss99569/.codeium/windsurf/bin:$PATH"
-
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
+# ── conda (lazy-loaded on first use of conda/mamba) ───────────────────
 load-conda() {
     unset -f load-conda conda mamba
     local __conda_setup
@@ -229,9 +133,21 @@ load-conda() {
 }
 conda() { load-conda; conda "$@"; }
 mamba() { load-conda; mamba "$@"; }
-# <<< conda initialize <<<
 
-# alias conda='mamba'
+# ── App-installed CLIs (only where present) ───────────────────────────
+[ -d "$HOME/.codeium/windsurf/bin" ] && path=("$HOME/.codeium/windsurf/bin" $path)
+[ -d "$HOME/.antigravity/antigravity/bin" ] && path=("$HOME/.antigravity/antigravity/bin" $path)
 
-# Added by Antigravity
-export PATH="/Users/ss99569/.antigravity/antigravity/bin:$PATH"
+# ── zsh-autosuggestions: fish-style ghost-text suggestions from history ─
+_zsrc "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" \
+      "$_ZPLUG/zsh-autosuggestions/zsh-autosuggestions.zsh"
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'          # dim grey suggestion
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)   # also suggest from completion
+bindkey '^ ' autosuggest-accept                 # Ctrl-Space to accept
+
+# ── Starship prompt ───────────────────────────────────────────────────
+command -v starship &>/dev/null && eval "$(starship init zsh)"
+
+# ── Per-machine overrides (machine-local, NOT tracked) — sourced last ──
+[ -r "$HOME/.config/zsh/local.zsh" ] && source "$HOME/.config/zsh/local.zsh"
+unset -f _zsrc; unset _ZPLUG
