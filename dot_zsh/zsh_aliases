@@ -7,11 +7,6 @@ alias tn='tmux new -s'
 alias ta='tmux a -t'
 alias tl='tmux ls'
 
-# misc
-alias tb='tensorboard --logdir'
-alias jl='jupyter-lab'
-alias jnb='jupyter-notebook'
-
 # vid editing
 function dji_merge() {
     parent_folder=$(basename "$(pwd)"); find *.MP4 | sed 's:\ :\\\ :g'| sed 's/^/file /' > fl.txt; ffmpeg -f concat -i fl.txt -c copy "${parent_folder}.MP4"; rm fl.txt
