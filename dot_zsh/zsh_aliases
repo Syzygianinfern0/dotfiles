@@ -1,8 +1,6 @@
 #!/bin/bash
 
 # linux
-alias ls='eza'
-alias la='ls -lah'
 alias df='duf'
 
 alias sizes="find . -type f -exec du -hs {} + | sort -rh | less"

@@ -1,0 +1,3 @@
+# Files no longer managed; removed from $HOME on `chezmoi apply`.
+.p10k.zsh
+bin/install_dots.sh

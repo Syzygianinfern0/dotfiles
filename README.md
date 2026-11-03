@@ -6,6 +6,8 @@
 
 </div>
 
+zsh + [Starship](https://starship.rs) with a small plugin set (fast-syntax-highlighting, zsh-autocomplete, zsh-autosuggestions), fzf, zoxide, eza and bat. Works on macOS, linuxbrew, and Linux hosts without brew/sudo.
+
 ## Quick Start
 
 - Basic dependencies for a docker
@@ -23,5 +25,12 @@ export PATH=$HOME/bin:$PATH
 - Install dotfiles
 ```shell
 sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply Syzygianinfern0
-~/bin/install_dots.sh
 ```
+
+`chezmoi apply` runs a bootstrap that installs the tool stack: via Homebrew when available (installed automatically on macOS), otherwise into `~/.local/bin` with plugins in `~/.local/share/zsh/plugins` (no sudo). Install failures never abort the apply.
+
+## Machine-local files (not synced)
+
+- `~/.config/zsh/env.local` — sourced by `.zshenv` (every shell)
+- `~/.config/zsh/secrets.zsh` — sourced by `.zshrc`
+- `~/.config/zsh/local.zsh` — sourced last by `.zshrc`, for per-host overrides
