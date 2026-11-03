@@ -32,8 +32,8 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # HYPHEN_INSENSITIVE="true"
 
 # Uncomment one of the following lines to change the auto-update behavior
-# zstyle ':omz:update' mode disabled  # disable automatic updates
-zstyle ':omz:update' mode auto # update automatically without asking
+zstyle ':omz:update' mode disabled  # disable automatic updates
+# zstyle ':omz:update' mode auto # update automatically without asking
 # zstyle ':omz:update' mode reminder  # just remind me to update when it's time
 
 # Uncomment the following line to change how often to auto-update (in days).
@@ -93,18 +93,16 @@ plugins=(
     perms # reserperms command to 755 and 644 recursively
     conda-zsh-completion
     zsh-autosuggestions
-    autoupdate # update oh-my-zsh plugins automatically
     zsh-syntax-highlighting
     zsh-history-substring-search
 )
 
 fpath+=${ZSH_CUSTOM:-${ZSH:-~/.oh-my-zsh}/custom}/plugins/zsh-completions/src
 source $ZSH/oh-my-zsh.sh
-autoload -U compinit && compinit
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
-bindkey "$terminfo[kcuu1]" history-substring-search-up
-bindkey "$terminfo[kcud1]" history-substring-search-down
+[[ -n "$terminfo[kcuu1]" ]] && bindkey "$terminfo[kcuu1]" history-substring-search-up
+[[ -n "$terminfo[kcud1]" ]] && bindkey "$terminfo[kcud1]" history-substring-search-down
 
 # User configuration
 
@@ -200,25 +198,37 @@ source ~/.zsh/zsh_aliases
 # alias conda=extended_conda
 
 export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+load-nvm() {
+    unset -f load-nvm nvm node npm npx yarn pnpm
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+}
+nvm() { load-nvm; nvm "$@"; }
+node() { load-nvm; node "$@"; }
+npm() { load-nvm; npm "$@"; }
+npx() { load-nvm; npx "$@"; }
+yarn() { load-nvm; yarn "$@"; }
+pnpm() { load-nvm; pnpm "$@"; }
 
 # Added by Windsurf
 export PATH="/Users/ss99569/.codeium/windsurf/bin:$PATH"
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$("$HOME/miniforge3/bin/conda" 'shell.zsh' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-else
-    if [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
+load-conda() {
+    unset -f load-conda conda mamba
+    local __conda_setup
+    __conda_setup="$("$HOME/miniforge3/bin/conda" 'shell.zsh' 'hook' 2> /dev/null)"
+    if [ $? -eq 0 ]; then
+        eval "$__conda_setup"
+    elif [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
         . "$HOME/miniforge3/etc/profile.d/conda.sh"
     else
         export PATH="$HOME/miniforge3/bin:$PATH"
     fi
-fi
-unset __conda_setup
+}
+conda() { load-conda; conda "$@"; }
+mamba() { load-conda; mamba "$@"; }
 # <<< conda initialize <<<
 
 # alias conda='mamba'
