@@ -1,6 +1,6 @@
 #!/bin/bash
 
-alias df='duf'
+command -v duf &>/dev/null && alias df='duf'
 
 # tmux
 alias tn='tmux new -s'
