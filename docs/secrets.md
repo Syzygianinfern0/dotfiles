@@ -2,7 +2,7 @@
 
 Private files are encrypted with [age](https://age-encryption.org), using chezmoi's built-in support, so you don't need to install `age`.
 
-- `key.txt.age` is the age key, protected by a passphrase. On the first apply it's decrypted once to `~/key.txt`.
+- `key.txt.age` is the age key, protected by a passphrase. On the first apply it's decrypted once to `~/.config/chezmoi/key.txt` (readable only by you). To set up a machine without typing the passphrase, copy that file over yourself before the first apply.
 - `~/.netrc` and `~/.ssh/config` are stored encrypted with that key.
 
 To add another encrypted file: `chezmoi add --encrypt <file>`.
