@@ -1,0 +1,4 @@
+interface:
+  display_name: "Peer Review Idea Loop"
+  short_description: "Iterative blind academic review for ideas"
+  default_prompt: "Use $peer-review-idea-loop to develop this idea through blind expert review rounds."

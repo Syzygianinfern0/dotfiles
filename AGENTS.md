@@ -5,6 +5,7 @@
 - chezmoi source for github.com/Syzygianinfern0/dotfiles — **PUBLIC**. Never commit secrets, tokens, internal hostnames/IPs, or employer-internal content (e.g. anything from old internship dotfiles).
 - Targets macOS (Homebrew) and Linux servers, including ones with no sudo and no usable Homebrew. Keep the hand-rolled bootstrap (`.chezmoiscripts/run_before_install-tools.sh.tmpl`); don't replace it with a brew-only flow.
 - Only trust a Homebrew prefix owned by the current user — a shared linuxbrew makes compinit warn about insecure directories.
+- Agent skills live in `dot_ai/skills/` (deployed to `~/.ai/skills/`, which no tool reads). A skill is enabled only by a per-skill link file under `private_dot_claude/skills/` or `private_dot_codex/skills/` — see `dot_ai/skills/README.md`. Don't add links unless asked.
 - Docs live in `docs/` (bootstrap, git, secrets, usage); update them when behavior changes.
 - Non-repo files in the source dir (README, docs/, assets/, AGENTS.md, CLAUDE.md) must be listed in `.chezmoiignore`, or chezmoi will put them in `~`.
 

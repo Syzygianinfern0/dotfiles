@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "project_id": null,
+  "run_id": null,
+  "retry_of": null,
+  "host": null,
+  "tmux_session": null,
+  "remote_run_dir": null,
+  "command": null,
+  "working_directory": null,
+  "source_id": null,
+  "environment_id": null,
+  "inputs": [],
+  "configuration": null,
+  "resources": {"gpu_ids": [], "gpu_count": null, "cpu_cores": null, "ram_gib": null},
+  "max_runtime_seconds": null,
+  "reserved_gpu_hours": null,
+  "actual_gpu_hours": null,
+  "status": "prepared",
+  "started_at": null,
+  "finished_at": null,
+  "last_checked_at": null,
+  "exit_code": null,
+  "logs": {"stdout": null, "stderr": null},
+  "results": {
+    "remote_path": null,
+    "canonical_host": null,
+    "canonical_path": null,
+    "transfer_status": "not_started",
+    "verified_at": null
+  }
+}

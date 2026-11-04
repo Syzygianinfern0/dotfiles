@@ -1,0 +1,3 @@
+interface:
+  display_name: "Cluster Compute"
+  short_description: "Run remote jobs and reuse project resources"

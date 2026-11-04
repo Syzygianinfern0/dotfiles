@@ -1,0 +1,4 @@
+interface:
+  display_name: "Draft Goal Condition"
+  short_description: "Draft verifiable Codex goal conditions"
+  default_prompt: "Use $draft-goal-condition to turn this prompt into a precise /goal condition."

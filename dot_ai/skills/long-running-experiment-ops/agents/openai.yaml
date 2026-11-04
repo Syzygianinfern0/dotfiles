@@ -1,0 +1,4 @@
+interface:
+  display_name: "Long Running Experiment Ops"
+  short_description: "Prepare repos for durable experiment runs"
+  default_prompt: "Use $long-running-experiment-ops to make this training repo resilient for unattended long-running experiments."

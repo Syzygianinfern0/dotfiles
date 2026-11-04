@@ -1,0 +1,31 @@
+# Populate during project setup. Null means unknown; don't invent verified paths.
+version: 1
+project_id: null
+development: {host: null, checkout: null}
+host_inventory: {host: null, path: null}
+placement_overrides: {}
+budget: {gpu_hours: null, stage_limits: {}}
+updated_at: null
+
+hosts: {}
+# alias -> {project_root, package_cache, verified_at}
+# Register adopted paths here; the conventional layout applies only to new roots.
+
+sources: {}
+# source_id -> {commit, content_manifest, upstream_revisions,
+#   locations: [{host, path, state, verified_at}]}
+
+environments: {}
+# environment_id -> {dependency_hash, python, install_options, runtime,
+#   source_id_if_required, setup_command,
+#   locations: [{host, path, state, verified_at}]}
+
+assets: {}
+# asset_id -> {kind, revision_or_hash, owner_project,
+#   canonical: {host, path}, copies: [{host, path, state, verified_at}]}
+# A shared filesystem path can be canonical; verify the mount before reuse.
+
+results: {canonical_host: null, canonical_root: null}
+# Run records contain specific output paths and transfer verification.
+# Resource states: planned, incomplete, verified, missing. Record UTC times.
+# Link resources to runs by ID; consult the host index for cross-project references.
