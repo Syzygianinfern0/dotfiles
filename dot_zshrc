@@ -50,6 +50,9 @@ _zsrc "$BREW_PREFIX/opt/zsh-fast-syntax-highlighting/share/zsh-fast-syntax-highl
       "$_ZPLUG/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh"
 
 # zsh-autocomplete (runs compinit itself; Up = history menu). Needs zsh >= 5.8.
+# It records recent dirs in $XDG_DATA_HOME/zsh/chpwd-recent-dirs but doesn't
+# create the directory (missing on brew-only machines) -> error on every cd.
+[[ -d ${XDG_DATA_HOME:-$HOME/.local/share}/zsh ]] || mkdir -p ${XDG_DATA_HOME:-$HOME/.local/share}/zsh
 autoload -Uz is-at-least
 is-at-least 5.8 && _zsrc "$BREW_PREFIX/share/zsh-autocomplete/zsh-autocomplete.plugin.zsh" \
       "$_ZPLUG/zsh-autocomplete/zsh-autocomplete.plugin.zsh"
