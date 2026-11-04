@@ -1,0 +1,94 @@
+{
+  "version": 4,
+  "lines": [
+    [
+      {
+        "id": "1",
+        "type": "model",
+        "color": "cyan",
+        "bold": false
+      },
+      {
+        "id": "4421a6a3-c48a-4221-aa4c-f49dc4de67a3",
+        "type": "thinking-effort",
+        "color": "cyan",
+        "bold": false
+      },
+      {
+        "id": "b38d6440-0654-4db7-951e-aa6606db3942",
+        "type": "current-working-dir",
+        "color": "magenta"
+      },
+      {
+        "id": "5",
+        "type": "git-branch",
+        "color": "brightBlue"
+      },
+      {
+        "id": "7",
+        "type": "git-changes",
+        "color": "brightBlue"
+      }
+    ],
+    [
+      {
+        "id": "221d587c-8d38-41b6-bb6e-5f9a15c02d8e",
+        "type": "compaction-counter"
+      },
+      {
+        "id": "0a52286d-d160-4c33-bf1a-609af9eb463c",
+        "type": "context-bar",
+        "color": "yellow",
+        "metadata": {
+          "display": "slider"
+        }
+      },
+      {
+        "id": "aba69a1a-a301-4d38-8cef-8ac356dd6590",
+        "type": "session-cost",
+        "color": "green"
+      }
+    ],
+    [
+      {
+        "id": "432aabe5-63f5-44b1-9473-0594c4a9cdc4",
+        "type": "skills",
+        "color": "brightBlack"
+      },
+      {
+        "id": "cab50b99-d3f0-4830-9b0f-a6822184ca96",
+        "type": "claude-session-id",
+        "color": "brightBlack"
+      }
+    ]
+  ],
+  "flexMode": "full",
+  "compactThreshold": 60,
+  "colorLevel": 2,
+  "defaultPadding": " ",
+  "defaultPaddingSide": "both",
+  "inheritSeparatorColors": false,
+  "globalBold": false,
+  "gitCacheTtlSeconds": 5,
+  "terminalWidthCacheTtlSeconds": 5,
+  "customCommandCacheTtlSeconds": 0,
+  "minimalistMode": false,
+  "powerline": {
+    "enabled": false,
+    "separators": [
+      ""
+    ],
+    "separatorInvertBackground": [
+      false
+    ],
+    "startCaps": [],
+    "endCaps": [],
+    "theme": "nord-aurora",
+    "autoAlign": false,
+    "continueThemeAcrossLines": false
+  },
+  "installation": {
+    "method": "pinned",
+    "installedVersion": "2.2.30"
+  }
+}

@@ -1,0 +1,58 @@
+{{- /* ccstatusline is a node script; on Linux node lives under ~/.local/opt (not on the hook PATH), so prefix it. */ -}}
+{{- $ccs := "" -}}
+{{- if eq .chezmoi.os "darwin" -}}
+{{-   if lookPath "ccstatusline" }}{{ $ccs = "ccstatusline" }}{{ end -}}
+{{- else -}}
+{{-   $bins := glob (joinPath .chezmoi.homeDir ".local/opt/node-*/bin/ccstatusline") -}}
+{{-   if $bins }}{{ $ccs = printf "PATH=%s:$PATH ccstatusline" (dir (last $bins)) }}{{ end -}}
+{{- end -}}
+{
+  "model": "opus",
+{{- if $ccs }}
+  "hooks": {
+    "PreToolUse": [
+      {
+        "_tag": "ccstatusline-managed",
+        "hooks": [
+          {
+            "type": "command",
+            "command": {{ printf "%s --hook" $ccs | toJson }}
+          }
+        ],
+        "matcher": "Skill"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "_tag": "ccstatusline-managed",
+        "hooks": [
+          {
+            "type": "command",
+            "command": {{ printf "%s --hook" $ccs | toJson }}
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": {{ $ccs | toJson }},
+    "padding": 0,
+    "refreshInterval": 10
+  },
+{{- end }}
+  "effortLevel": "high",
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "high"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "medium"
+    }
+  },
+  "tui": "default",
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "cleanupPeriodDays": 365,
+  "idleCompaction": false
+}
