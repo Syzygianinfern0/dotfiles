@@ -3,7 +3,7 @@
 Every `chezmoi apply` first runs [`run_before_install-tools.sh`](../.chezmoiscripts/run_before_install-tools.sh.tmpl):
 
 - **macOS:** installs Homebrew if it's missing, then the tools, Ghostty and the Meslo Nerd Font.
-- **Linux with brew:** uses linuxbrew. If that fails (say, a read-only shared install), it falls through to the next mode.
+- **Linux with brew:** uses linuxbrew, but only if you own it. Another user's shared install is ignored (by the shell too), and if brew fails it falls through to the next mode.
 - **Linux without brew:** downloads release binaries into `~/.local/bin` and clones the zsh plugins into `~/.local/share/zsh/plugins`. No sudo needed. A binary that won't run on the host (for example, built for a newer glibc) is removed again.
 
 The script exits right away when everything is already installed, retries anything that failed on the next apply, and never stops the apply. The shell config checks for each tool before using it, so a partial install still gives you a working shell.

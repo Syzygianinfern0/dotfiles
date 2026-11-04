@@ -5,13 +5,16 @@
 typeset -U path   # auto-dedupe entries
 
 # ── Homebrew prefix (macOS Apple Silicon/Intel, linuxbrew system/user) ─
-if [ -d /opt/homebrew ]; then
+# Only trust a brew owned by us (-O): on shared boxes another user's
+# /home/linuxbrew would put their binaries first on PATH, and compinit
+# flags their completion dirs as insecure.
+if [[ -O /opt/homebrew ]]; then
   BREW_PREFIX=/opt/homebrew
-elif [ -d /usr/local/Homebrew ]; then
+elif [[ -O /usr/local/Homebrew ]]; then
   BREW_PREFIX=/usr/local
-elif [ -d /home/linuxbrew/.linuxbrew ]; then
+elif [[ -O /home/linuxbrew/.linuxbrew ]]; then
   BREW_PREFIX=/home/linuxbrew/.linuxbrew
-elif [ -d "$HOME/.linuxbrew" ]; then
+elif [[ -O "$HOME/.linuxbrew" ]]; then
   BREW_PREFIX="$HOME/.linuxbrew"
 fi
 export BREW_PREFIX

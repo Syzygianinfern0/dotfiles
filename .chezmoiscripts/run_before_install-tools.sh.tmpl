@@ -23,11 +23,13 @@ have() { command -v "$1" >/dev/null 2>&1; }
 log()  { printf '    %s\n' "$*"; }
 warn() { printf '    [warn] %s\n' "$*" >&2; }
 
+# Only use a brew we own (-O): another user's shared linuxbrew would run their
+# binaries as us (and installs into it fail anyway). Matches ~/.zshenv.
 find_brew() {
-  for c in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew "$HOME/.linuxbrew/bin/brew"; do
-    [ -x "$c" ] && { echo "$c"; return; }
+  local c
+  for c in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew "$HOME/.linuxbrew/bin/brew" "$(command -v brew 2>/dev/null)"; do
+    [ -n "$c" ] && [ -x "$c" ] && [ -O "$c" ] && { echo "$c"; return; }
   done
-  command -v brew 2>/dev/null
 }
 BREW="$(find_brew)"
 [ -n "$BREW" ] && eval "$("$BREW" shellenv)" 2>/dev/null
