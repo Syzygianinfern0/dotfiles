@@ -1,0 +1,13 @@
+# Global gitignore (core.excludesFile) — OS/editor junk only; project
+# ignores belong in each repo's .gitignore.
+.DS_Store
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+Thumbs.db
+*~
+*.swp
+*.swo
+.idea/
+.direnv/

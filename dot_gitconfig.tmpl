@@ -5,20 +5,48 @@
     defaultBranch = main
 [core]
     editor = nano
+    excludesFile = ~/.config/git/ignore
+    # delta when installed, otherwise plain less (git runs this via sh).
+    pager = "if command -v delta >/dev/null 2>&1; then delta; else less; fi"
+[interactive]
+    diffFilter = "if command -v delta >/dev/null 2>&1; then delta --color-only; else cat; fi"
+[delta]
+    navigate = true              # n / N jump between files in a diff
+    line-numbers = true
+[push]
+    autoSetupRemote = true       # first push of a new branch sets upstream
+[fetch]
+    prune = true                 # drop remote-tracking branches deleted upstream
+[pull]
+    rebase = true
+[rebase]
+    autoStash = true
+[merge]
+    conflictStyle = zdiff3
+[diff]
+    algorithm = histogram
+    colorMoved = default
+[rerere]
+    enabled = true               # remember conflict resolutions
+[branch]
+    sort = -committerdate
 [filter "lfs"]
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f
 	process = git-lfs filter-process
 	required = true
-{{- if eq .chezmoi.os "darwin" }}
 [credential]
+{{- if eq .chezmoi.os "darwin" }}
 	helper = osxkeychain
+{{- else }}
+	helper = store
+{{- end }}
 {{- with lookPath "gh" }}
+# GitHub: token from `gh auth login` (keychain on macOS, gh's own store on Linux).
 [credential "https://github.com"]
 	helper =
 	helper = !{{ . }} auth git-credential
-{{- end }}
-{{- else }}
-[credential]
-	helper = store
+[credential "https://gist.github.com"]
+	helper =
+	helper = !{{ . }} auth git-credential
 {{- end }}

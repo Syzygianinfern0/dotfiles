@@ -59,6 +59,12 @@ is-at-least 5.8 && _zsrc "$BREW_PREFIX/share/zsh-autocomplete/zsh-autocomplete.p
 
 # ── fzf (fuzzy finder): Ctrl-R history, Ctrl-T files, Alt-C cd ─────────
 command -v fzf &>/dev/null && eval "$(fzf --zsh 2>/dev/null)"
+# Use fd for file/dir listings: faster, respects .gitignore, shows dotfiles.
+if command -v fd &>/dev/null; then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+  export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+fi
 
 # ── zoxide (smarter cd; use `z <dir>` and `zi` for interactive) ────────
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"

@@ -1,0 +1,23 @@
+# ~/.config/ghostty/config — managed by chezmoi. Docs: https://ghostty.org/docs/config
+# List options: `ghostty +show-config --default --docs`
+
+font-family = MesloLGS Nerd Font Mono
+font-size = 13
+
+# Matches the old iTerm2 transparency.
+background-opacity = 0.88
+window-padding-x = 8
+window-padding-y = 6
+window-save-state = always
+
+# Left Option acts as Alt/Meta (Option+Backspace / Option+arrows word motions,
+# like iTerm2's "Esc+"); Right Option still types special characters.
+macos-option-as-alt = left
+
+# Auto-install Ghostty's terminfo on SSH hosts (falls back to xterm-256color),
+# so remote tmux/nano/htop don't complain about an unknown TERM.
+shell-integration-features = ssh-env,ssh-terminfo
+
+copy-on-select = clipboard
+mouse-hide-while-typing = true
+confirm-close-surface = false

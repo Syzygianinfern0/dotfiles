@@ -12,7 +12,9 @@
 #                     zsh plugins cloned into ~/.local/share/zsh/plugins.
 #                     Set GITHUB_TOKEN to avoid GitHub API rate limits.
 
-TOOLS="starship zoxide fzf eza bat duf dust btop git-lfs"
+# TOOLS = command names (presence check); BREW_PKGS = formula names.
+TOOLS="starship zoxide fzf eza bat duf dust btop git-lfs rg fd delta gh jq"
+BREW_PKGS="starship zoxide fzf eza bat duf dust btop git-lfs ripgrep fd git-delta gh jq"
 BIN="$HOME/.local/bin"
 PLUG="$HOME/.local/share/zsh/plugins"
 export PATH="$BIN:$PATH"
@@ -39,6 +41,9 @@ all_present() {
   plugin_ok share/zsh-autosuggestions/zsh-autosuggestions.zsh zsh-autosuggestions/zsh-autosuggestions.zsh &&
   plugin_ok opt/zsh-fast-syntax-highlighting/share/zsh-fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh &&
   plugin_ok share/zsh-autocomplete/zsh-autocomplete.plugin.zsh zsh-autocomplete/zsh-autocomplete.plugin.zsh
+{{- if eq .chezmoi.os "darwin" }} &&
+  { [ -d /Applications/Ghostty.app ] || [ -d "$HOME/Applications/Ghostty.app" ]; }
+{{- end }}
 }
 all_present && exit 0
 
@@ -56,9 +61,11 @@ fi
 {{ end -}}
 
 if [ -n "$BREW" ]; then
-  if "$BREW" install $TOOLS zsh-autosuggestions zsh-fast-syntax-highlighting zsh-autocomplete; then
+  if "$BREW" install $BREW_PKGS zsh-autosuggestions zsh-fast-syntax-highlighting zsh-autocomplete; then
 {{- if eq .chezmoi.os "darwin" }}
     "$BREW" install --cask font-meslo-lg-nerd-font || warn "font cask install skipped."
+    [ -d /Applications/Ghostty.app ] || [ -d "$HOME/Applications/Ghostty.app" ] \
+      || "$BREW" install --cask ghostty || warn "ghostty cask install skipped."
 {{- end }}
     echo "==> bootstrap done (Homebrew)."
     exit 0
@@ -101,8 +108,26 @@ install_release() {
   curl -fsSL -o "$f" "$url" && tar xf "$f" -C "$d" || { warn "$name: download/extract failed"; return 1; }
   local c; shopt -s globstar nullglob
   for c in "$d"/**/"$name"; do [ -f "$c" ] && { install -m 755 "$c" "$BIN/$name"; break; }; done
-  if [ -x "$BIN/$name" ]; then log "$name installed -> $BIN/$name"
-  else warn "$name: binary not found in ${url##*/}"; return 1; fi
+  [ -x "$BIN/$name" ] || { warn "$name: binary not found in ${url##*/}"; return 1; }
+  verify_bin "$name"
+}
+
+# install_raw <name> <owner/repo> <regex>...: for releases that ship a bare
+# binary instead of a tarball (e.g. jq).
+install_raw() {
+  local name="$1" repo="$2" url; shift 2
+  url="$(gh_asset "$repo" "$@")"
+  [ -n "$url" ] || { warn "$name: no release asset found (rate-limited? set GITHUB_TOKEN)"; return 1; }
+  curl -fsSL -o "$TMP/$name.bin" "$url" && install -m 755 "$TMP/$name.bin" "$BIN/$name" \
+    || { warn "$name: download failed"; return 1; }
+  verify_bin "$name"
+}
+
+# verify_bin <name>: a glibc build can be too new for an old distro (e.g. Rocky
+# 8). Remove a binary that can't run, so `command -v` guards stay truthful.
+verify_bin() {
+  if "$BIN/$1" --version >/dev/null 2>&1; then log "$1 installed -> $BIN/$1"
+  else rm -f "$BIN/$1"; warn "$1: downloaded binary does not run here; removed"; return 1; fi
 }
 
 if [ -n "$ARCH" ]; then
@@ -115,6 +140,11 @@ if [ -n "$ARCH" ]; then
   have bat     || install_release bat sharkdp/bat "bat-v.*-${ARCH}-unknown-linux-musl\.tar\.gz$" "bat-v.*-${ARCH}-unknown-linux-gnu\.tar\.gz$"
   have duf     || install_release duf muesli/duf "duf_.*_linux_${DUFARCH}\.tar\.gz$"
   have dust    || install_release dust bootandy/dust "dust-v.*-${ARCH}-unknown-linux-musl\.tar\.gz$" "dust-v.*-${ARCH}-unknown-linux-gnu\.tar\.gz$"
+  have rg      || install_release rg BurntSushi/ripgrep "ripgrep-.*-${ARCH}-unknown-linux-musl\.tar\.gz$" "ripgrep-.*-${ARCH}-unknown-linux-gnu\.tar\.gz$"
+  have fd      || install_release fd sharkdp/fd "fd-v.*-${ARCH}-unknown-linux-musl\.tar\.gz$" "fd-v.*-${ARCH}-unknown-linux-gnu\.tar\.gz$"
+  have delta   || install_release delta dandavison/delta "delta-.*-${ARCH}-unknown-linux-musl\.tar\.gz$" "delta-.*-${ARCH}-unknown-linux-gnu\.tar\.gz$"
+  have gh      || install_release gh cli/cli "gh_.*_linux_${GOARCH}\.tar\.gz$"
+  have jq      || install_raw jq jqlang/jq "jq-linux-${GOARCH}$"
   have btop    || install_release btop aristocratos/btop "btop-${ARCH}-(unknown-)?linux-musl\.(tar\.gz|tbz)$"
   have git-lfs || install_release git-lfs git-lfs/git-lfs "git-lfs-linux-${GOARCH}-v.*\.tar\.gz$"
 fi
