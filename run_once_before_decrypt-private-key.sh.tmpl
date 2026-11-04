@@ -2,7 +2,9 @@
 # Decrypt the age identity (passphrase-protected) on first apply.
 # Uses chezmoi's built-in age, so no separate `age` binary is needed.
 umask 077
-if [ ! -f "${HOME}/key.txt" ]; then
-    "{{ .chezmoi.executable }}" age decrypt --passphrase --output "${HOME}/key.txt" "{{ .chezmoi.sourceDir }}/key.txt.age"
-    chmod 600 "${HOME}/key.txt"
+KEY="${HOME}/.config/chezmoi/key.txt"
+if [ ! -f "$KEY" ]; then
+    mkdir -p "${HOME}/.config/chezmoi"
+    "{{ .chezmoi.executable }}" age decrypt --passphrase --output "$KEY" "{{ .chezmoi.sourceDir }}/key.txt.age"
+    chmod 600 "$KEY"
 fi
