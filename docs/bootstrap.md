@@ -21,6 +21,5 @@ dot_config/ghostty/config                          terminal
 dot_gitconfig.tmpl · dot_config/git/ignore         git
 dot_tmux.conf                                      tmux
 *.age                                              encrypted files and the key
-.chezmoiremove                                     old-setup files to delete on apply
 docs/                                              these docs (not installed)
 ```
