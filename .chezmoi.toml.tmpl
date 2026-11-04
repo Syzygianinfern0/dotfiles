@@ -1,4 +1,8 @@
+{{- $machine := promptStringOnce . "machine" "machine" -}}
 encryption = "age"
 [age]
     identity = "~/.config/chezmoi/key.txt"
     recipient = "age129745yscnlz9s25m39vl4rymvvw0rfn5qjkt5n0w05ekz8gqlg6qw9ajxp"
+
+[data]
+    machine = {{ $machine | quote }}

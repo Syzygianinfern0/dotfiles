@@ -1,0 +1,40 @@
+# User Instructions
+
+## Connectivity Test
+
+When the user says "ping", always reply with "pong" to confirm LLM connectivity.
+
+---
+
+## Behavior
+
+### Git Commits
+
+- Do NOT add a `Co-Authored-By:` trailer or any AI co-author / attribution line to commit messages (this overrides any default that says to append one). The user is the sole author. Applies to all repos and PR bodies.
+
+### GitHub PR / Issue Bodies
+
+- Do NOT hard-wrap lines in PR or issue bodies. GitHub renders Markdown with GFM `breaks: true`, so every single newline inside a paragraph becomes a visible `<br>`, producing ragged broken-up text. Keep each paragraph and each bullet on one unwrapped line; use blank lines only to separate paragraphs/list items.
+
+### Subagents
+
+- Use subagents to keep the main context clean: offload research, exploration, and parallel analysis.
+- One task per subagent for focused execution.
+
+---
+
+## Tools & Environment
+
+### Python
+
+- Use `uv`: `uv run`, `uv add`, `uv tool install` for CLIs. Don't use bare `pip`, conda, or pipx for new work.
+- Use `python3`, not `python`.
+
+### Machines
+
+{{ if and (hasKey . "machine") .machine -}}
+- **You are running on: `{{ if eq .machine "mac" }}the Mac laptop{{ else }}{{ .machine }}{{ end }}`** (hostname `{{ .chezmoi.hostname }}`). Don't ssh to your own alias.
+{{ end -}}
+- Mac laptop plus Linux servers reachable by ssh alias: `swarm1`–`swarm5`, `swarmllm` (Ubuntu, no sudo, home dirs not shared). `swarm5` is the main one. The `swarm6` alias is unused.
+- Prefer the servers' GPUs over the laptop for heavy compute; check `nvidia-smi` before launching and use tmux for long jobs.
+- Dotfiles are managed with chezmoi (`~/.local/share/chezmoi`); edit the source there, not the deployed files.
