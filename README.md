@@ -1,37 +1,42 @@
-<div align="center">
+<p align="center"><img src="assets/logo.svg" alt="dotfiles logo" width="128"></p>
 
-# Dotfiles
+<h1 align="center">dotfiles</h1>
 
-<samp> My dots managed using [`Chezmoi`](https://www.chezmoi.io/) </samp>
+<p align="center">One small, fast zsh setup for every machine I use: Mac, Linux, or a cluster without sudo.</p>
 
-</div>
+---
 
-zsh + [Starship](https://starship.rs) with a small plugin set (fast-syntax-highlighting, zsh-autocomplete, zsh-autosuggestions), fzf, zoxide, eza and bat, plus ripgrep, fd, delta (git pager), gh and jq. [Ghostty](https://ghostty.org) terminal on macOS. Works on macOS, linuxbrew, and Linux hosts without brew/sudo.
+My shell config, managed with [chezmoi](https://www.chezmoi.io/). One command sets up a new machine: it installs the tools, writes the config, and decrypts the private bits. It behaves the same on macOS, Linux with Homebrew, and shared Linux boxes where there's no brew and no sudo.
 
-## Quick Start
+## What you get
 
-- Basic dependencies for a docker
-```shell
-apt update
-apt install -y git curl zsh
-```
+| | What it's for | Tools |
+| --- | --- | --- |
+| **Prompt** | path, git status, slow-command timer, hostname over SSH | [Starship](https://starship.rs) |
+| **Typing help** | syntax colors, grey suggestions from history, live completion menus | [fast-syntax-highlighting](https://github.com/zdharma-continuum/fast-syntax-highlighting), [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions), [zsh-autocomplete](https://github.com/marlonrichert/zsh-autocomplete) |
+| **Getting around** | fuzzy history and file search, `z <name>` to jump to frequent folders | [fzf](https://github.com/junegunn/fzf), [zoxide](https://github.com/ajeetdsouza/zoxide) |
+| **Everyday CLI** | nicer `ls`, `cat`, `grep`, `find`, `du`, `df`, `top`, JSON | [eza](https://github.com/eza-community/eza), [bat](https://github.com/sharkdp/bat), [ripgrep](https://github.com/BurntSushi/ripgrep), [fd](https://github.com/sharkdp/fd), [dust](https://github.com/bootandy/dust), [duf](https://github.com/muesli/duf), [btop](https://github.com/aristocratos/btop), [jq](https://jqlang.org) |
+| **Git** | readable diffs, GitHub sign-in, large files | [delta](https://github.com/dandavison/delta), [gh](https://cli.github.com), [git-lfs](https://git-lfs.com) |
+| **Terminal** | GPU terminal with a Nerd Font (macOS), sessions that survive disconnects | [Ghostty](https://ghostty.org), [tmux](https://github.com/tmux/tmux) |
+| **Managed by** | one command per machine, encrypted secrets | [chezmoi](https://www.chezmoi.io), [age](https://age-encryption.org) |
 
-- Install dotfiles
-```shell
+## Quick start
+
+```sh
 sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply Syzygianinfern0
 ```
 
-`chezmoi apply` runs a bootstrap that installs the tool stack (starship, zoxide, fzf, eza, bat, duf, dust, btop, git-lfs, ripgrep, fd, delta, gh, jq + zsh plugins; on macOS also Ghostty and the Meslo Nerd Font): via Homebrew when available (installed automatically on macOS), otherwise into `~/.local/bin` with plugins in `~/.local/share/zsh/plugins` (no sudo). It runs on every apply but exits immediately once everything is present, so failed installs are retried next time; it never aborts the apply. On shared cluster login nodes, `export GITHUB_TOKEN=...` first to avoid GitHub API rate limits.
+You'll be asked for the passphrase that unlocks the encrypted files. Then sign in to GitHub once with `gh auth login`, and make zsh your shell if it isn't already: `chsh -s "$(command -v zsh)"`.
 
-On first apply you'll be asked for the passphrase that unlocks the age key (chezmoi's built-in age is used, so no separate `age` install is needed).
+On a bare container, install the basics first: `apt update && apt install -y git curl zsh`.
 
-Git uses `gh` for GitHub credentials on every OS: run `gh auth login` once per machine.
+To pull in later changes: `chezmoi update`.
 
-## Machine-local files (not synced)
+## Learn more
 
-- `~/.config/zsh/env.local` — sourced by `.zshenv` (every shell)
-- `~/.config/zsh/local.zsh` — sourced last by `.zshrc`: per-host overrides and secrets
+- [Using it](docs/usage.md): shortcuts, aliases, and the everyday chezmoi commands
+- [How tools get installed](docs/bootstrap.md): Homebrew vs. the no-sudo fallback, and a map of the repo
+- [Git setup](docs/git.md): the defaults, delta, and GitHub sign-in
+- [Secrets](docs/secrets.md): what's encrypted and how the key works
 
-## Working on this repo
-
-Run `pre-commit install` once per clone; it runs gitleaks to block commits containing secrets.
+The old oh-my-zsh + Powerlevel10k setup lives on the [`pre-starship`](https://github.com/Syzygianinfern0/dotfiles/tree/pre-starship) branch.
