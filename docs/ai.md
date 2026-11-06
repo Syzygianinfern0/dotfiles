@@ -82,6 +82,12 @@ chat2md -o notes.md <id>   # write to a file
 
 Transcripts are per machine, so `chat2md` only finds sessions from the host it runs on. Codex compresses most logs with zstd; reading them needs Python 3.14+ or the `zstd` command.
 
+## Adding something new
+
+Skills, scripts, instructions and settings should work the same in both agents. Write them agent-neutrally: "the agent" rather than a product name, no tool names that only one agent has, shared files in `~/.ai/` or `~/bin`, and both `~/.claude` and `~/.codex` handled when reading agent data. A setting for one agent gets its counterpart in the other, or a note here on why there isn't one. Both agents are told this in the shared instructions.
+
+Current exceptions, because only one agent has the feature: the `draft-goal-condition` skill (Codex `/goal`), the `cursor-canvas` skill (Codex + Cursor), and the status line (ccstatusline for Claude, built-in for Codex).
+
 ## Rolling out a change
 
 After pushing to `main`, run `chezmoi update` and `chezmoi verify --exclude scripts` on every machine, as with any other change (see [`AGENTS.md`](../AGENTS.md)).

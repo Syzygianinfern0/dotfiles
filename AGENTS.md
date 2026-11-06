@@ -6,7 +6,7 @@
 - Targets macOS (Homebrew) and Linux servers, including ones with no sudo and no usable Homebrew. Keep the hand-rolled bootstrap (`.chezmoiscripts/run_before_install-tools.sh.tmpl`); don't replace it with a brew-only flow.
 - Only trust a Homebrew prefix owned by the current user — a shared linuxbrew makes compinit warn about insecure directories.
 - Agent skills live in `dot_ai/skills/` (deployed to `~/.ai/skills/`, which no tool reads). A skill is enabled only by a per-skill link file under `private_dot_claude/skills/` or `private_dot_codex/skills/` — see `dot_ai/skills/README.md`. Don't add links unless asked.
-- Docs live in `docs/` (bootstrap, git, secrets, usage); update them when behavior changes.
+- Docs live in `docs/` (ai, bootstrap, git, secrets, usage); update them when behavior changes.
 - Non-repo files in the source dir (README, docs/, assets/, AGENTS.md, CLAUDE.md) must be listed in `.chezmoiignore`, or chezmoi will put them in `~`.
 
 ## AI tool settings
@@ -14,6 +14,7 @@
 - Claude `~/.claude/settings.json` is fully owned by `private_dot_claude/settings.json.tmpl` — changes made in Claude's `/config` get reverted on apply, so put them in the template. ccstatusline hooks are only emitted when ccstatusline is found (Linux: `~/.local/opt/node-*/bin`).
 - Codex `~/.codex/config.toml` is NOT owned: `private_dot_codex/modify_private_config.toml` only enforces a few keys and keeps everything Codex writes (trust entries, app state). Never copy the whole Codex config into the repo — its project paths leak personal chat topics.
 - ccstatusline config (`dot_config/ccstatusline/settings.json`) is a plain file, same on all machines.
+- **Agent parity:** every AI-related addition (skill, script, instruction, setting) must cover both Claude Code and Codex and be written agent-neutrally — the rules are under "Claude Code and Codex parity" in `dot_ai/instructions.md.tmpl`. When enabling a skill, link it for both agents unless the user says otherwise. A setting added to one agent's config gets its counterpart in the other's, or a line in `docs/ai.md` saying why there is none. Known exceptions: `draft-goal-condition` (Codex `/goal`), `cursor-canvas` (Codex + Cursor), the status line (ccstatusline vs. Codex's built-in one).
 
 ## Secrets
 

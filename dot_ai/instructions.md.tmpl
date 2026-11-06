@@ -21,6 +21,16 @@ When the user says "ping", always reply with "pong" to confirm LLM connectivity.
 - Use subagents to keep the main context clean: offload research, exploration, and parallel analysis.
 - One task per subagent for focused execution.
 
+### Claude Code and Codex parity
+
+The user works with both Claude Code and Codex. Anything you build for AI agents (skills, helper scripts, instructions, settings, hooks, MCP servers, commands) must work the same in both, so write it agent-neutrally:
+
+- Say "the agent", not "Claude" or "Codex". Don't depend on one agent's tool names or parameters (Claude's `Agent`/`Task`, Codex's `spawn_agent`/`fork_context`); describe the intent instead ("start a fresh subagent with no prior context").
+- Put shared pieces in shared places (`~/.ai/` for instructions and skills, `~/bin` for scripts, both tracked in the dotfiles repo), not under `~/.claude` or `~/.codex`.
+- Anything that reads agent data (sessions, config, memory) handles both `~/.claude` and `~/.codex`.
+- If one agent needs an extra file or setting (e.g. Codex's `agents/openai.yaml` for a skill), add the counterpart for the other agent, or note why there is none.
+- If something can't be symmetric because only one agent has the feature, say so in the file and tell the user.
+
 ---
 
 ## Tools & Environment
