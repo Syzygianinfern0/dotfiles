@@ -27,6 +27,15 @@ Start a command with a space to keep it out of history.
 | `dji_merge` | concatenate the DJI `.MP4` clips in this folder |
 | `dji_chapters` | print chapter timestamps for those clips |
 
+## Scripts in `~/bin`
+
+`~/bin` (first on PATH) holds personal scripts, tracked in the repo under `bin/`:
+
+| Command | Does |
+| --- | --- |
+| `chat2md [session-id] [-o out.md]` | print a Claude Code session as Markdown: human messages and final replies only (default: latest session in this folder) |
+| `check-swarm5-ssh [host] [interval]` | poll until `host` (default `swarm5`) accepts ssh, then notify |
+
 ## Machine-local overrides
 
 Not tracked; sourced if present:

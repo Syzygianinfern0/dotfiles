@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# Wait until a host (default swarm5) accepts ssh and notify when login is possible
+
+HOST="${1:-swarm5}"
+INTERVAL="${2:-30}"  # seconds between checks
+START_TIME=$(date +%s)
+
+echo "Checking SSH availability for $HOST (every ${INTERVAL}s)..."
+echo "Press Ctrl+C to stop"
+echo "---"
+
+while true; do
+    if ssh -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no "$HOST" exit 2>/dev/null; then
+        ELAPSED=$(($(date +%s) - START_TIME))
+        MINS=$((ELAPSED / 60))
+        SECS=$((ELAPSED % 60))
+        
+        echo ""
+        echo "✅ $HOST is reachable! You can log in now."
+        echo "   (Available after ${MINS}m ${SECS}s)"
+        
+        # Try to show a desktop notification if available (macOS)
+        if command -v osascript &>/dev/null; then
+            osascript -e "display notification \"$HOST is reachable - you can SSH in now!\" with title \"$HOST Ready\" sound name \"Glass\""
+        fi
+        
+        # Optional: play a sound
+        if command -v afplay &>/dev/null; then
+            afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
+        fi
+        
+        exit 0
+    else
+        ELAPSED=$(($(date +%s) - START_TIME))
+        printf "\r⏳ Still waiting... (%.0fm %.0fs) Next check in %ds   " $((ELAPSED/60)) $((ELAPSED%60)) "$INTERVAL"
+        sleep "$INTERVAL"
+    fi
+done

@@ -38,3 +38,7 @@ When the user says "ping", always reply with "pong" to confirm LLM connectivity.
 - Mac laptop plus Linux servers reachable by ssh alias: `swarm1`–`swarm5`, `swarmllm` (Ubuntu, no sudo, home dirs not shared). `swarm5` is the main one. The `swarm6` alias is unused.
 - Prefer the servers' GPUs over the laptop for heavy compute; check `nvidia-smi` before launching and use tmux for long jobs.
 - Dotfiles are managed with chezmoi (`~/.local/share/chezmoi`); edit the source there, not the deployed files.
+
+### Past sessions
+
+- To read another Claude Code session (e.g. when given a session ID), run `chat2md <session-id>`: it prints just the human messages and final replies as Markdown. With no argument it shows the latest session for the current directory. Transcripts are per machine, so it only finds sessions from this host.

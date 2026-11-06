@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Export a Claude Code session transcript to compact Markdown.
+
+Keeps only what the human typed and Claude's final reply for each turn
+(the text after the last tool call). Drops tool calls/results, thinking,
+slash-command noise, system reminders and subagent sidechains.
+
+Usage:
+  chat2md                     # latest session for the current directory
+  chat2md <session-id|path>   # a specific session
+  chat2md -o out.md ...       # write to file instead of stdout
+"""
+import argparse, json, os, re, sys
+from pathlib import Path
+
+NOISE = ("<command-name>", "<command-message>", "<local-command",
+         "<system-reminder>", "[Request interrupted", "[Image: source:")
+
+
+def project_dir(cwd):
+    return Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", cwd)
+
+
+def resolve(arg):
+    if arg and os.path.isfile(arg):
+        return Path(arg)
+    d = project_dir(os.getcwd())
+    if arg:
+        p = d / f"{arg}.jsonl"
+        if p.exists():
+            return p
+        hits = list(Path.home().glob(f".claude/projects/*/{arg}.jsonl"))
+        if hits:
+            return hits[0]
+        sys.exit(f"session not found: {arg}")
+    files = sorted(d.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not files:
+        sys.exit(f"no sessions in {d}")
+    return files[0]
+
+
+def human_text(rec):
+    if rec.get("isMeta") or rec.get("isCompactSummary") or rec.get("isSidechain"):
+        return None
+    c = rec["message"]["content"]
+    parts = [c] if isinstance(c, str) else [
+        x.get("text", "") for x in c if x.get("type") == "text"]
+    if not isinstance(c, str) and any(x.get("type") == "tool_result" for x in c):
+        return None
+    parts = [p.strip() for p in parts if p.strip() and not p.lstrip().startswith(NOISE)]
+    return "\n\n".join(parts) or None
+
+
+def export(path):
+    turns, title = [], None
+    cur = None  # [human_text, list_of_final_text_blocks]
+    for line in open(path, encoding="utf-8"):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        t = rec.get("type")
+        if t in ("ai-title", "summary"):
+            title = rec.get("aiTitle") or rec.get("title") or rec.get("summary") or title
+        if t == "user":
+            h = human_text(rec)
+            if h:
+                cur = [h, []]
+                turns.append(cur)
+        elif t == "assistant" and cur and not rec.get("isSidechain"):
+            for b in rec["message"].get("content", []):
+                if b.get("type") == "tool_use":
+                    cur[1] = []  # only keep text after the last tool call
+                elif b.get("type") == "text" and b["text"].strip():
+                    cur[1].append(b["text"].strip())
+    out = [f"# {title or 'Claude Code session'}", "",
+           f"_Session `{Path(path).stem}` — human messages and final replies only._", ""]
+    for h, a in turns:
+        out += ["## Human", "", h, "", "## Assistant", "",
+                "\n\n".join(a) or "_(no text reply)_", "", "---", ""]
+    return "\n".join(out)
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("session", nargs="?")
+    ap.add_argument("-o", "--output")
+    a = ap.parse_args()
+    md = export(resolve(a.session))
+    if a.output:
+        Path(a.output).write_text(md, encoding="utf-8")
+        print(f"wrote {a.output}", file=sys.stderr)
+    else:
+        print(md)
