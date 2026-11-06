@@ -38,5 +38,6 @@ To pull in later changes: `chezmoi update`.
 - [How tools get installed](docs/bootstrap.md): Homebrew vs. the no-sudo fallback, and a map of the repo
 - [Git setup](docs/git.md): the defaults, delta, and GitHub sign-in
 - [Secrets](docs/secrets.md): what's encrypted and how the key works
+- [AI coding agents](docs/ai.md): shared instructions and skills for Claude Code and Codex, their settings, and `chat2md`
 
 The old oh-my-zsh + Powerlevel10k setup lives on the [`pre-starship`](https://github.com/Syzygianinfern0/dotfiles/tree/pre-starship) branch.
