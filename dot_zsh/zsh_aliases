@@ -1,4 +1,5 @@
-command -v duf &>/dev/null && alias df='duf'
+# duf breaks df flags (df -h); keep it out of Claude Code agent shells (CLAUDECODE=1).
+[[ -z $CLAUDECODE ]] && command -v duf &>/dev/null && alias df='duf'
 
 # tmux
 alias tn='tmux new -s'

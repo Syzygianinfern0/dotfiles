@@ -43,7 +43,9 @@ fi
 
 command -v fzf >/dev/null 2>&1 && eval "$(fzf --bash 2>/dev/null)"
 command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init bash)"
-if command -v eza >/dev/null 2>&1; then
+# eza aliases are for humans only: Claude Code (CLAUDECODE=1) replays this
+# shell's aliases for agent commands, and eza breaks flags like ls -lt.
+if [ -z "${CLAUDECODE:-}" ] && command -v eza >/dev/null 2>&1; then
   alias ls='eza --group-directories-first --icons=auto'
   alias ll='eza -lg --group-directories-first --icons=auto'
   alias la='eza -lag --group-directories-first --icons=auto'

@@ -27,6 +27,8 @@ Start a command with a space to keep it out of history.
 | `dji_merge` | concatenate the DJI `.MP4` clips in this folder |
 | `dji_chapters` | print chapter timestamps for those clips |
 
+The `ls`, `cat` and `df` aliases are skipped in Claude Code agent shells (`CLAUDECODE=1`): Claude Code replays your interactive aliases for every agent command, and eza, bat and duf reject standard flags such as `ls -lt`, `cat -v` and `df -h`. Codex runs non-interactive shells, which never load these aliases.
+
 ## Scripts in `~/bin`
 
 `~/bin` (first on PATH) holds personal scripts, tracked in the repo under `bin/`:
