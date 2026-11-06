@@ -31,7 +31,7 @@
 
 After a change lands on `main` and is pushed, roll it out to every machine — not just the Mac:
 
-- Hosts (ssh aliases from the Mac): `swarm1` `swarm2` `swarm3` `swarm4` `swarm5` `swarmllm`. Ubuntu, own home dirs, login shell bash with `exec zsh` in `~/.bash_profile`.
+- Hosts (ssh aliases from the Mac): `swarm1` `swarm2` `swarm3` `swarm4` `swarm5` `swarmllm`. Ubuntu, own home dirs, login shell bash; the managed `~/.bash_profile` (Linux only) hands interactive logins to zsh.
 - Each machine needs its name in local chezmoi data (drives the "You are running on" line in `~/.ai/instructions.md`). Set it once with `chezmoi init --promptString machine=<alias>` (`mac` on the laptop); it lives in `~/.config/chezmoi/chezmoi.toml`, never in the repo.
 - On each: `chezmoi update`, then `chezmoi verify --exclude scripts`. Pass `GITHUB_TOKEN` over stdin/env (never on the command line) so bootstrap downloads don't hit GitHub API rate limits.
 - Report per-host results; a host that fails (e.g. full disk) gets noted for follow-up, not skipped silently.

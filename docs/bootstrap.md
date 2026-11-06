@@ -16,6 +16,7 @@ On shared login nodes, `export GITHUB_TOKEN=...` before applying so the download
 .chezmoiscripts/run_before_install-tools.sh.tmpl   tool installer
 dot_zshenv · dot_zprofile                          PATH and brew detection
 dot_zshrc · dot_zsh/zsh_aliases                    interactive shell, plugins, aliases
+dot_bash_profile · dot_bashrc                      Linux only: PATH for bash, hand logins to zsh
 dot_config/starship.toml                           prompt
 dot_config/ghostty/config                          terminal
 dot_gitconfig.tmpl · dot_config/git/ignore         git

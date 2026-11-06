@@ -1,0 +1,16 @@
+# ~/.bash_profile — managed by chezmoi (Linux only). On the servers the login
+# shell is bash; bash login shells read this file instead of ~/.profile.
+# Loads ~/.bashrc (PATH etc.), then hands ordinary interactive logins
+# (plain `ssh host`) to zsh.
+
+[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+
+# Stay in bash unless this is a real interactive terminal session. An exec
+# here would swallow the command of `bash -lc cmd`, and agent backends
+# (Codex sets CODEX_REMOTE_PAYLOAD and sends its payload next; Cursor sets
+# CURSOR_AGENT) would time out waiting for bash.
+case $- in *i*) ;; *) return ;; esac
+[ -n "${CODEX_REMOTE_PAYLOAD:-}${CURSOR_AGENT:-}${BASH_EXECUTION_STRING:-}" ] && return
+[ -t 0 ] || return
+
+command -v zsh >/dev/null 2>&1 && exec zsh -l

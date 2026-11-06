@@ -4,3 +4,8 @@ docs/
 assets/
 AGENTS.md
 CLAUDE.md
+{{- if ne .chezmoi.os "linux" }}
+# bash startup files are for the Linux servers (login shell bash -> zsh)
+.bash_profile
+.bashrc
+{{- end }}

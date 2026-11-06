@@ -42,6 +42,11 @@ Not tracked; sourced if present:
 
 - `~/.config/zsh/env.local`: read by `.zshenv`, so every shell (scripts too). Good for env vars and PATH.
 - `~/.config/zsh/local.zsh`: read last by `.zshrc`. Good for per-host aliases, secrets and tweaks.
+- `~/.config/bash/local.bash` (Linux): read last by an interactive `.bashrc`.
+
+## Bash on the servers
+
+The servers' login shell is bash. The managed `~/.bash_profile` hands a plain `ssh host` session to zsh, but stays in bash for `bash -lc cmd`, `ssh host cmd`, agent backends (Codex, Cursor) and sessions without a terminal, so their commands still run. `~/.bashrc` puts `~/bin` and `~/.local/bin` on PATH first, so `ssh host uv ...` works too. If zsh is missing, the login stays in bash instead of disconnecting.
 
 ## Everyday chezmoi
 
