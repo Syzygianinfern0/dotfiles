@@ -33,7 +33,7 @@ Start a command with a space to keep it out of history.
 
 | Command | Does |
 | --- | --- |
-| `chat2md [session-id] [-o out.md]` | print a Claude Code session as Markdown: human messages and final replies only (default: latest session in this folder) |
+| `chat2md [session-id] [-o out.md]` | print a Claude Code or Codex session as Markdown: human messages and final replies only (default: latest session of either agent in this folder; reads Codex's `.jsonl.zst` with Python 3.14+ or the `zstd` command) |
 | `check-swarm5-ssh [host] [interval]` | poll until `host` (default `swarm5`) accepts ssh, then notify |
 
 ## Machine-local overrides

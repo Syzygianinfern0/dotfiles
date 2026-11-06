@@ -1,45 +1,106 @@
 #!/usr/bin/env python3
-"""Export a Claude Code session transcript to compact Markdown.
+"""Export a Claude Code or Codex session transcript to compact Markdown.
 
-Keeps only what the human typed and Claude's final reply for each turn
-(the text after the last tool call). Drops tool calls/results, thinking,
-slash-command noise, system reminders and subagent sidechains.
+Keeps only what the human typed and the agent's final reply for each turn.
+Drops tool calls/results, thinking, injected context (system reminders,
+AGENTS.md, environment info) and subagent sidechains.
 
 Usage:
-  chat2md                     # latest session for the current directory
-  chat2md <session-id|path>   # a specific session
+  chat2md                     # latest session (Claude or Codex) for the current directory
+  chat2md <session-id|path>   # a specific session; Claude and Codex IDs both work
   chat2md -o out.md ...       # write to file instead of stdout
 """
-import argparse, json, os, re, sys
+import argparse, io, json, os, re, subprocess, sys
 from pathlib import Path
 
-NOISE = ("<command-name>", "<command-message>", "<local-command",
-         "<system-reminder>", "[Request interrupted", "[Image: source:")
+HOME = Path.home()
+CLAUDE_PROJECTS = HOME / ".claude" / "projects"
+CODEX = HOME / ".codex"
+CODEX_GLOBS = ("sessions/*/*/*/*.jsonl", "sessions/*/*/*/*.jsonl.zst",
+               "archived_sessions/*.jsonl", "archived_sessions/*.jsonl.zst")
+
+CLAUDE_NOISE = ("<command-name>", "<command-message>", "<local-command",
+                "<system-reminder>", "[Request interrupted", "[Image: source:")
+# Codex logs injected context as user messages; real input is never XML-wrapped.
+CODEX_NOISE = ("<", "# AGENTS.md instructions")
 
 
-def project_dir(cwd):
-    return Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", cwd)
+def open_text(path):
+    """Open a session log; Codex compresses most of them with zstd."""
+    path = Path(path)
+    if path.suffix != ".zst":
+        return open(path, encoding="utf-8")
+    try:
+        from compression import zstd  # Python 3.14+
+        return zstd.open(path, "rt", encoding="utf-8")
+    except ImportError:
+        out = subprocess.run(["zstd", "-dcq", str(path)], capture_output=True)
+        if out.returncode:
+            sys.exit(f"can't decompress {path}: need Python 3.14+ or the zstd command")
+        return io.StringIO(out.stdout.decode("utf-8", "replace"))
+
+
+def session_name(path):
+    name = Path(path).name
+    for ext in (".jsonl.zst", ".jsonl"):
+        if name.endswith(ext):
+            return name[: -len(ext)]
+    return Path(path).stem
+
+
+# ── locating sessions ────────────────────────────────────────────────────────
+
+def claude_project_dir(cwd):
+    return CLAUDE_PROJECTS / re.sub(r"[^A-Za-z0-9]", "-", cwd)
+
+
+def codex_files():
+    return [p for g in CODEX_GLOBS for p in CODEX.glob(g)]
+
+
+def first_record(path):
+    with open_text(path) as f:
+        for line in f:
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    return {}
+
+
+def is_codex(path):
+    return first_record(path).get("type") == "session_meta"
+
+
+def latest_for_cwd(cwd):
+    cands = list(claude_project_dir(cwd).glob("*.jsonl"))
+    # Codex files aren't grouped by folder; check the newest ones' recorded cwd.
+    recent = sorted(codex_files(), key=lambda p: p.stat().st_mtime, reverse=True)[:100]
+    cands += [p for p in recent
+              if (first_record(p).get("payload") or {}).get("cwd") == cwd]
+    if not cands:
+        sys.exit(f"no Claude or Codex sessions found for {cwd}")
+    return max(cands, key=lambda p: p.stat().st_mtime)
 
 
 def resolve(arg):
-    if arg and os.path.isfile(arg):
+    if not arg:
+        return latest_for_cwd(os.getcwd())
+    if os.path.isfile(arg):
         return Path(arg)
-    d = project_dir(os.getcwd())
-    if arg:
-        p = d / f"{arg}.jsonl"
-        if p.exists():
-            return p
-        hits = list(Path.home().glob(f".claude/projects/*/{arg}.jsonl"))
-        if hits:
-            return hits[0]
-        sys.exit(f"session not found: {arg}")
-    files = sorted(d.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not files:
-        sys.exit(f"no sessions in {d}")
-    return files[0]
+    p = claude_project_dir(os.getcwd()) / f"{arg}.jsonl"
+    if p.exists():
+        return p
+    hits = list(CLAUDE_PROJECTS.glob(f"*/{arg}.jsonl"))
+    hits += [p for p in codex_files() if session_name(p).endswith(arg)]
+    if not hits:
+        sys.exit(f"session not found: {arg} (looked in ~/.claude/projects and ~/.codex)")
+    return hits[0]
 
 
-def human_text(rec):
+# ── Claude Code ──────────────────────────────────────────────────────────────
+
+def claude_human_text(rec):
     if rec.get("isMeta") or rec.get("isCompactSummary") or rec.get("isSidechain"):
         return None
     c = rec["message"]["content"]
@@ -47,14 +108,14 @@ def human_text(rec):
         x.get("text", "") for x in c if x.get("type") == "text"]
     if not isinstance(c, str) and any(x.get("type") == "tool_result" for x in c):
         return None
-    parts = [p.strip() for p in parts if p.strip() and not p.lstrip().startswith(NOISE)]
+    parts = [p.strip() for p in parts if p.strip() and not p.lstrip().startswith(CLAUDE_NOISE)]
     return "\n\n".join(parts) or None
 
 
-def export(path):
+def parse_claude(path):
     turns, title = [], None
     cur = None  # [human_text, list_of_final_text_blocks]
-    for line in open(path, encoding="utf-8"):
+    for line in open_text(path):
         try:
             rec = json.loads(line)
         except json.JSONDecodeError:
@@ -63,7 +124,7 @@ def export(path):
         if t in ("ai-title", "summary"):
             title = rec.get("aiTitle") or rec.get("title") or rec.get("summary") or title
         if t == "user":
-            h = human_text(rec)
+            h = claude_human_text(rec)
             if h:
                 cur = [h, []]
                 turns.append(cur)
@@ -73,8 +134,70 @@ def export(path):
                     cur[1] = []  # only keep text after the last tool call
                 elif b.get("type") == "text" and b["text"].strip():
                     cur[1].append(b["text"].strip())
-    out = [f"# {title or 'Claude Code session'}", "",
-           f"_Session `{Path(path).stem}` — human messages and final replies only._", ""]
+    return title, [(h, a) for h, a in turns]
+
+
+# ── Codex ────────────────────────────────────────────────────────────────────
+
+def codex_title(session_id):
+    title = None
+    try:
+        for line in open(CODEX / "session_index.jsonl", encoding="utf-8"):
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("id") == session_id:
+                title = rec.get("thread_name") or title  # last entry wins
+    except OSError:
+        pass
+    return title
+
+
+def parse_codex(path):
+    turns, session_id = [], None
+    cur = None  # {"human": str, "final": [...], "tail": [...], "last": [...]}
+    for line in open_text(path):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        p = rec.get("payload") or {}
+        if rec.get("type") == "session_meta":
+            session_id = p.get("id") or p.get("session_id")
+            continue
+        if rec.get("type") != "response_item":
+            continue
+        kind = p.get("type")
+        if kind == "message" and p.get("role") == "user":
+            parts = [c.get("text", "").strip() for c in p.get("content", [])
+                     if c.get("type") == "input_text"]
+            parts = [t for t in parts if t and not t.startswith(CODEX_NOISE)]
+            if parts:
+                cur = {"human": "\n\n".join(parts), "final": [], "tail": [], "last": []}
+                turns.append(cur)
+        elif kind == "message" and p.get("role") == "assistant" and cur:
+            texts = [c.get("text", "").strip() for c in p.get("content", [])
+                     if c.get("type") == "output_text" and c.get("text", "").strip()]
+            cur["final" if p.get("phase") == "final_answer" else "tail"] += texts
+            cur["last"] = texts or cur["last"]
+        elif cur and kind not in ("message", "reasoning"):
+            cur["tail"] = []  # a tool call: only keep text after the last one
+    title = codex_title(session_id) if session_id else None
+    # No final answer (e.g. the agent stopped to ask a question): show its last message.
+    return title, [(t["human"], t["final"] or t["tail"] or t["last"]) for t in turns]
+
+
+# ── output ───────────────────────────────────────────────────────────────────
+
+def export(path):
+    codex = is_codex(path)
+    title, turns = (parse_codex if codex else parse_claude)(path)
+    if not turns:
+        sys.exit(f"no human messages found in {path}")
+    agent = "Codex" if codex else "Claude Code"
+    out = [f"# {title or agent + ' session'}", "",
+           f"_{agent} session `{session_name(path)}` — human messages and final replies only._", ""]
     for h, a in turns:
         out += ["## Human", "", h, "", "## Assistant", "",
                 "\n\n".join(a) or "_(no text reply)_", "", "---", ""]
@@ -82,8 +205,8 @@ def export(path):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("session", nargs="?")
+    ap = argparse.ArgumentParser(description="Claude Code / Codex session → compact Markdown")
+    ap.add_argument("session", nargs="?", help="session ID or .jsonl path (default: latest here)")
     ap.add_argument("-o", "--output")
     a = ap.parse_args()
     md = export(resolve(a.session))
