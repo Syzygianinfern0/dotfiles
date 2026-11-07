@@ -18,6 +18,28 @@ Say in one line whether the question is a judgment call (direction, design, plan
 checkable. If it is checkable, check it yourself and tell the user; run the panel only if they still want it. A smaller
 panel is fine for lower stakes: one seat per family (e.g. `opus sol`).
 
+**Frame at the user's altitude.** Keep the user's question, in their words, as the headline of the packet, and hold
+the rest of the packet to it too: the decision line, the options, the context you select and "what a good answer must
+cover". Narrowing usually enters there, not in the headline.
+
+- If the user named no decision, write "No decision pending; the user wants an assessment." Do not invent one. Include
+  options only if the user has real alternatives.
+- Project plans, roadmaps and next steps are evidence, not the frame. Do not let a planned next step define success.
+- For a question about something the user built or plans, the packet states what it is for: the user's words, then
+  goals documented in design docs, then your inferences, each labelled with its source (the roadmap's ordering is not a
+  priority). Coverage must include what exists today, what it is meant to do, and what closing the gap would take.
+- Operational detail goes in only where it changes the answer, with that connection stated.
+- Test before sending: could a panelist satisfy every coverage item and still not answer the user's question? If yes,
+  rewrite.
+
+**Check the framing before round 1** when the packet will contain a decision, options, a concrete case or coverage
+items the user did not state. Show in one line, in the user's terms, what you will ask and the top two things the
+panel must cover, and ask one question: what result would make this worth it to them, or what matters most. Wait for
+the reply. If the packet adds nothing the user did not state, skip without comment. A wrong frame wastes the whole
+panel; this costs one message. (Panel split on this, by family: the GPT seats would ask only when an unresolved
+ambiguity would materially change the answer, and otherwise proceed with stated assumptions. The testable trigger was
+adopted because "would materially change it" is the judgment that failed.)
+
 ## 1. Set up
 
 - Panel directory: a fresh scratch directory per question (the agent's scratchpad, or `${TMPDIR:-/tmp}/panels/<date>-<slug>`).
@@ -34,7 +56,9 @@ panel is fine for lower stakes: one seat per family (e.g. `opus sol`).
 
 Write `round1.md`, the frozen packet every seat receives unchanged (the dispatcher prepends a short read-only preamble):
 
-- the question and the decision it feeds; the options, if known, plus permission to say it is the wrong question
+- the user's question verbatim, then the decision it feeds (or "no decision pending"); options only if real, plus
+  permission to say it is the wrong question
+- for something the user built or plans: what it is for, with sources (see "Frame at the user's altitude")
 - context, constraints, budget, deadlines; decisions the user has already made
 - facts you have verified, with how; file pointers to read
 - what a good answer must cover
@@ -44,9 +68,9 @@ Write `round1.md`, the frozen packet every seat receives unchanged (the dispatch
 Require this answer shape, at most about 700 words:
 
 ```
-Recommendation:   (commit; no hedging everything)
+Answer:           (to the question as asked; commit, no hedging everything; recommend an action when relevant)
 Confidence:       low | medium | high
-Cruxes:           the 2–3 points the recommendation rests on
+Cruxes:           the 2–3 points the answer rests on
 What would change my mind:
 Is this the right question?:
 ```
@@ -62,11 +86,21 @@ continue without it and say so. Never substitute another model silently.
 
 1. Read every answer in full. Check each decisive factual claim you can (code, docs, CLI help); record it as verified
    or refuted, with how.
-2. List the disagreements as cruxes D1..Dn. State each side at its strongest and point to where it appears
+2. **Coverage check.** Write one line: "The user asked X; round 1 answered Y." List the parts of X no seat answered,
+   including gaps every seat shares (a disagreement index cannot find those). If Y is narrower, repair the agenda:
+   replace the packet requirements that narrowed it, and make X and the omissions the first items of round 2; do not
+   just append them last. Tell the user in one line in your interim message without waiting, unless the repair depends
+   on intent only they know (then ask, as in §0). If nothing in round 1 bears on X, fix the packet and re-run round 1
+   with `--fresh` instead.
+3. List the disagreements as cruxes D1..Dn, ordered by how much they bear on the user's question as asked (not by how
+   concrete they are). Keep an operational point as a crux if it changes the answer; move useful but non-decisive ones
+   to a **Findings** list the seats need not take positions on (decisive findings still reach the final answer); omit
+   irrelevant ones. State each side at its strongest and point to where it appears
    ("Panelist R, bullet 3"), using the anonymous labels from `panel-ask label <dir> 1` (stable for the whole panel,
    kept in `labels.json`). The index is navigation, not a replacement: the full answers go along.
-3. Write `round2_head.md`:
+4. Write `round2_head.md`:
    - verified facts and user decisions since round 1, with sources
+   - the user's question again, any omissions from the coverage check, and the Findings list
    - the crux index, with "take a position on each, one short paragraph each"
    - the rules: hold or change on each crux and give the reason either way; "others agree" is not a reason; holding
      needs no apology; challenge the index if it misstates you
@@ -74,7 +108,7 @@ continue without it and say so. Never substitute another model silently.
      `Final position for the memo (≤80 words):` recommendation, surviving objection, what would change it
    - **not**: an "everyone agreed" section, counts, your own leaning, model names
    - `{SELF}` in the head becomes that reader's own label
-4. `panel-ask pack <dir> 1` writes `round2_<seat>.md`: your head plus all round-1 answers, anonymized, in a different
+5. `panel-ask pack <dir> 1` writes `round2_<seat>.md`: your head plus all round-1 answers, anonymized, in a different
    random order for each reader. It warns if an answer names a model or family; edit the answer file and re-pack.
 
 **If round 1 converged** (no crux that matters for the decision), do not invent a contrarian. Make round 2 short: each
@@ -95,7 +129,18 @@ values or preferences (risk appetite, venue, taste) go to the user unresolved; d
 
 ## 6. The memo
 
-Write `memo.md` in the panel directory and give the user its content (or a tight version of it plus the path):
+Write two things.
+
+Before writing, repeat the coverage check against the user's original question. Say plainly what the panel did not
+answer; do not fill the gap with confident prose.
+
+**The answer to the user** (in chat): its first line answers their question as they asked it. Then a few short
+paragraphs or bullets: the reasons, the objection still standing, what is theirs to decide, and a next step if one is
+useful (an assessment does not need to become an action plan). Plain
+language: no panel labels (D1, Panelist R), no project-internal names or acronyms unless defined on first use, no
+process narration. End with the path to the memo and the cost.
+
+**`memo.md`** in the panel directory, the full record:
 
 - **Question** and **recommendation**, then confidence, and why
 - **Verified facts** that shaped it
@@ -107,7 +152,7 @@ Write `memo.md` in the panel directory and give the user its content (or a tight
 - **Cheapest next test** for each open crux; questions only the user can decide
 - **Moderator's view**, labelled as yours, including where you disagree with the panel
 - **Provenance**: seats and models, the label key, rounds, failures or missing seats, cost (Claude seats report it;
-  Codex cost is "unknown", not $0), and links to every brief and answer
+  Codex cost is "unknown", never zero), and links to every brief and answer
 
 Representation check: only if your recommendation goes against most of the panel, or you paraphrase a dissent instead
 of quoting it, resume that seat with one short question ("Is this your position? ≤50 words") and quote the reply
