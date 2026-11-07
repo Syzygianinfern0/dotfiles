@@ -6,6 +6,8 @@ Every `chezmoi apply` first runs [`run_before_install-tools.sh`](../.chezmoiscri
 - **Linux with brew:** uses linuxbrew, but only if you own it. Another user's shared install is ignored (by the shell too), and if brew fails it falls through to the next mode.
 - **Linux without brew:** downloads release binaries into `~/.local/bin` and clones the zsh plugins into `~/.local/share/zsh/plugins`. No sudo needed. A binary that won't run on the host (for example, built for a newer glibc) is removed again.
 
+On every OS it also installs standalone [uv](https://docs.astral.sh/uv/) into `~/.local/bin` if it's missing, then runs `uv python install 3.14 --default`. That makes `python` and `python3` a uv-managed CPython 3.14 (links in `~/.local/bin`, which comes before `/usr/bin` on PATH). System Python is untouched, a conda env you activate still wins, and projects pin their own version through `uv run`. Change the version with `PY_DEFAULT` in the script.
+
 The script exits right away when everything is already installed, retries anything that failed on the next apply, and never stops the apply. The shell config checks for each tool before using it, so a partial install still gives you a working shell.
 
 On shared login nodes, `export GITHUB_TOKEN=...` before applying so the downloads don't hit GitHub's API rate limit.

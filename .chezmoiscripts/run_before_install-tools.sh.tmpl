@@ -47,6 +47,23 @@ all_present() {
   { [ -d /Applications/Ghostty.app ] || [ -d "$HOME/Applications/Ghostty.app" ]; }
 {{- end }}
 }
+# ── uv + default Python (all OSes) ────────────────────────────────────
+# Standalone uv in ~/.local/bin, and a uv-managed CPython as the default
+# `python`/`python3` (links in ~/.local/bin, ahead of /usr/bin on PATH).
+# System Python is untouched; projects still pin their own via `uv run`.
+PY_DEFAULT=3.14
+if ! have uv; then
+  log "uv not found; installing standalone uv into $BIN..."
+  curl -LsSf https://astral.sh/uv/install.sh \
+    | env UV_INSTALL_DIR="$BIN" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 \
+    || warn "uv install failed."
+fi
+if have uv && ! "$BIN/python3" -c "import sys; sys.exit(sys.version_info[:2] != tuple(map(int, '$PY_DEFAULT'.split('.'))))" >/dev/null 2>&1; then
+  uv python install "$PY_DEFAULT" --default >/dev/null 2>&1 \
+    && log "python/python3 -> uv CPython $PY_DEFAULT ($BIN)" \
+    || warn "uv python install $PY_DEFAULT --default failed."
+fi
+
 all_present && exit 0
 
 echo "==> chezmoi bootstrap: installing missing shell tools"
