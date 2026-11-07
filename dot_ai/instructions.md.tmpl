@@ -37,6 +37,12 @@ The user works with both Claude Code and Codex. Anything you build for AI agents
 - If one agent needs an extra file or setting (e.g. Codex's `agents/openai.yaml` for a skill), add the counterpart for the other agent, or note why there is none.
 - If something can't be symmetric because only one agent has the feature, say so in the file and tell the user.
 
+### LaTeX Writing
+
+- In new LaTeX documents, handle abbreviations with the `acronym` package: `\acrodef{X}{full form}` in the preamble, `\ac{X}` in the text, and `\acresetall` after the abstract. Never define one by hand, and write out any abbreviation used only once. Proper names stay plain.
+- In an existing document, follow its convention and ask before converting.
+- Use `\acf{X}` in captions that may float above X's first use. Check the page limit after expanding.
+
 ---
 
 ## Tools & Environment
