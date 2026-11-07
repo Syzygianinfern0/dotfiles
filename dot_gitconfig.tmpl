@@ -22,7 +22,8 @@
 [rebase]
     autoStash = true
 [merge]
-    conflictStyle = zdiff3
+    # zdiff3 needs git >= 2.35; the Ubuntu servers ship 2.25/2.34, which reject it outright.
+    conflictStyle = {{ if eq .chezmoi.os "darwin" }}zdiff3{{ else }}diff3{{ end }}
 [diff]
     algorithm = histogram
     colorMoved = default
