@@ -18,6 +18,7 @@ The repo sets up two agents, [Claude Code](https://claude.com/claude-code) and [
 └── config.toml                ← private_dot_codex/modify_private_config.toml   (a few keys enforced)
 
 ~/bin/chat2md                  ← bin/executable_chat2md   (read past sessions of either agent)
+~/bin/panel-ask                ← bin/executable_panel-ask (run a cross-family model panel)
 ```
 
 `~/.claude` and `~/.codex` are created with mode 700.
@@ -64,6 +65,20 @@ Not managed for either: MCP servers and plugins you add in the apps, command all
 ## Memory
 
 Each agent keeps its own memory, outside the repo: Claude under `~/.claude/projects/<project>/memory/`, Codex under `~/.codex/memories/`. Neither is synced between machines.
+
+## Model panels
+
+The `with-the-power-of-friendship` skill has the agent moderate a panel of Claude Opus, Claude Fable, GPT-6 Astra and GPT-6.1 Sol: independent first answers, then anonymized cross-critique, then a decision memo with the surviving dissent. Every seat, from either family, goes through `~/bin/panel-ask`, which calls `claude -p` or `codex exec` read-only, resumes seats by session id in later rounds, and logs status and cost to the panel directory. It needs both CLIs logged in on the machine. Seat names map to model slugs at the top of the script.
+
+```sh
+panel-ask seats                       # known seats
+panel-ask run <dir> 1 [seat ...]      # run round 1 from <dir>/round1.md
+panel-ask label <dir> 1               # anonymous labels for the round-1 answers
+panel-ask pack <dir> 1                # round-2 briefs from <dir>/round2_head.md + answers
+panel-ask run <dir> 2                 # round 2, resuming each seat
+```
+
+Isolation differs by family: Codex seats run in Codex's read-only sandbox; Claude seats get only Read, Grep and Glob under `--restricted`, with no MCP servers or skills. Claude reports cost per call; Codex cost is recorded as unknown.
 
 ## Reading past sessions
 

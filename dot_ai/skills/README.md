@@ -7,7 +7,7 @@ To turn one on, add a one-line link file containing `../../.ai/skills/<name>`:
 - Claude: `private_dot_claude/skills/symlink_<name>`
 - Codex: `private_dot_codex/skills/symlink_<name>`
 
-Delete the link file to turn it off again. Currently none are linked.
+Delete the link file to turn it off again. Currently linked (both agents): `with-the-power-of-friendship`.
 
 | Skill | Origin | Notes |
 |---|---|---|
@@ -18,3 +18,4 @@ Delete the link file to turn it off again. Currently none are linked.
 | cluster-compute | swarm5 Codex | |
 | draft-goal-condition | old setup, Mac Codex | Codex-specific (`/goal`) |
 | cursor-canvas | old setup, Mac Codex | Codex + Cursor Canvas specific |
+| with-the-power-of-friendship | swarm5 Claude Code, 2026-11-06 | Uses `~/bin/panel-ask` (needs both `claude` and `codex` CLIs) |

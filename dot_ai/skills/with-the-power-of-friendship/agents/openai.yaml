@@ -1,0 +1,4 @@
+interface:
+  display_name: "With the Power of Friendship"
+  short_description: "Cross-family model panel that deliberates to a decision memo"
+  default_prompt: "Use $with-the-power-of-friendship to run a panel of Opus, Fable, Astra and Sol on this question and give me the decision memo."

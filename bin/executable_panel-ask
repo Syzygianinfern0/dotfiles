@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""panel-ask: run seats of a multi-model panel (the with-the-power-of-friendship skill).
+
+Every seat, from either model family, goes through this one script, so the panel
+behaves the same whether the moderator is Claude Code or Codex. Files in the
+panel directory are the message bus.
+
+  panel-ask run  <panel-dir> <round> [seat ...]   run seats in parallel (default: all)
+  panel-ask label <panel-dir> <round>             assign/print anonymous labels for answers
+  panel-ask pack <panel-dir> <round>              build next-round briefs from answers
+  panel-ask seats                                 list known seats
+
+Panel directory layout:
+  round<N>.md            brief for round N (or round<N>_<seat>.md per seat)
+  round<N+1>_head.md     moderator's next-round header, input to `pack`
+  <seat>_r<N>.md         a seat's answer;  <seat>_r<N>.log  raw CLI output
+  sessions.json          seat -> family, model, session id (round>1 resumes it)
+  labels.json            seat -> anonymous label (made by `pack`)
+  status.tsv             one line per seat run: round seat model status secs cost session
+
+Seat specs: a known name (opus, fable, astra, sol) or name=family:model,
+e.g. luna=codex:gpt-6-luna.
+
+Isolation is not identical across families: Codex seats run in Codex's
+read-only sandbox; Claude seats run with --restricted and only Read/Grep/Glob
+(no shell, no web, no MCP, no skills). Claude reports cost; Codex cost is
+recorded as unknown.
+"""
+import argparse, json, os, random, re, subprocess, sys, threading, time, uuid
+from pathlib import Path
+
+SEATS = {
+    "opus": ("claude", "opus"),
+    "fable": ("claude", "fable"),
+    "astra": ("codex", "gpt-6-astra"),
+    "sol": ("codex", "gpt-6.1-sol"),
+}
+DEFAULT = ["opus", "fable", "astra", "sol"]
+
+PREAMBLE = """You are one panelist in a deliberation; other independent analyses exist and you may see them in later rounds.
+Stay read-only: do not create, edit or delete files, run builds or experiments, or start other agents, models or panel skills.
+Investigate with reading and search only. Your final message is your answer and nothing else.
+
+"""
+
+lock = threading.Lock()
+
+
+def parse_seat(spec):
+    if "=" in spec:
+        name, rest = spec.split("=", 1)
+        family, model = rest.split(":", 1)
+        if family not in ("claude", "codex"):
+            sys.exit(f"panel-ask: unknown family {family!r} in {spec!r}")
+        return name, family, model
+    if spec not in SEATS:
+        sys.exit(f"panel-ask: unknown seat {spec!r}; known: {', '.join(SEATS)} (or name=family:model)")
+    return (spec,) + SEATS[spec]
+
+
+def load_json(p):
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def save_json(p, d):
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d, indent=2) + "\n")
+    tmp.replace(p)
+
+
+def run_seat(a, d, name, family, model, rnd, results):
+    brief = d / f"round{rnd}_{name}.md"
+    if not brief.exists():
+        brief = d / f"round{rnd}.md"
+    out, log = d / f"{name}_r{rnd}.md", d / f"{name}_r{rnd}.log"
+    with lock:
+        sessions = load_json(d / "sessions.json")
+    prev = sessions.get(name)
+    resume = rnd > 1 and not a.fresh and prev and prev.get("model") == model and prev.get("session")
+    prompt = brief.read_text() if resume else PREAMBLE + brief.read_text()
+    cwd = a.cwd or os.getcwd()
+    sid, cost = (prev["session"] if resume else None), "unknown"
+
+    if family == "claude":
+        sid = sid or str(uuid.uuid4())
+        cmd = ["claude", "-p", "--model", model, "--effort", a.effort,
+               "--restricted", "--tools", "Read,Grep,Glob", "--strict-mcp-config",
+               "--disable-slash-commands", "--permission-prompts", "none",
+               "--output-format", "json", "--add-dir", str(d)]
+        for x in a.add_dir:
+            cmd += ["--add-dir", x]
+        cmd += ["--resume", sid] if resume else ["--session-id", sid]
+    else:
+        effort = {"max": "xhigh"}.get(a.effort, a.effort)
+        common = ["-m", model, "--skip-git-repo-check", "-c", f'model_reasoning_effort="{effort}"', "-o", str(out)]
+        if resume:
+            cmd = ["codex", "exec", "resume", sid] + common + ["-c", 'sandbox_mode="read-only"', "-"]
+        else:
+            cmd = ["codex", "exec", "-s", "read-only"] + common + ["-"]
+
+    out.unlink(missing_ok=True)
+    t0, status = time.time(), "ok"
+    try:
+        with open(log, "w") as lf:
+            p = subprocess.run(cmd, input=prompt, text=True, stdout=lf, stderr=subprocess.STDOUT,
+                               cwd=cwd, timeout=a.timeout)
+        code = p.returncode
+    except subprocess.TimeoutExpired:
+        code, status = -1, "timeout"
+    except FileNotFoundError as e:
+        code, status = -1, f"missing-cli:{e.filename}"
+    raw = log.read_text(errors="replace")
+
+    if family == "claude":
+        try:
+            j = json.loads(raw.strip().splitlines()[-1])
+            sid = j.get("session_id", sid)
+            if j.get("total_cost_usd") is not None:
+                cost = f"{j['total_cost_usd']:.2f}"
+            if j.get("is_error"):
+                status = "error"
+            out.write_text((j.get("result") or "").strip() + "\n")
+        except (ValueError, IndexError):
+            if status == "ok":
+                status = "error"
+    else:
+        m = re.search(r"session id:\s*([0-9a-f-]{36})", raw)
+        if m and not resume:
+            sid = m.group(1)
+
+    if status == "ok" and code != 0:
+        status = f"exit{code}"
+    if status == "ok" and (not out.exists() or not out.read_text().strip()):
+        status = "empty"
+    secs = int(time.time() - t0)
+    with lock:
+        sessions = load_json(d / "sessions.json")
+        if sid:
+            sessions[name] = {"family": family, "model": model, "session": sid}
+            save_json(d / "sessions.json", sessions)
+        with open(d / "status.tsv", "a") as f:
+            f.write(f"{rnd}\t{name}\t{family}:{model}\t{status}\t{secs}\t{cost}\t{sid or '-'}\t{'resume' if resume else 'new'}\n")
+    results.append((name, status, secs, cost))
+
+
+def cmd_run(a):
+    d = Path(a.dir).resolve()
+    seats = [parse_seat(s) for s in (a.seats or DEFAULT)]
+    for name, *_ in seats:
+        if not (d / f"round{a.round}_{name}.md").exists() and not (d / f"round{a.round}.md").exists():
+            sys.exit(f"panel-ask: no brief for round {a.round} (round{a.round}.md or round{a.round}_{name}.md) in {d}")
+    results = []
+    threads = [threading.Thread(target=run_seat, args=(a, d, n, f, m, a.round, results)) for n, f, m in seats]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    bad = 0
+    for name, status, secs, cost in sorted(results):
+        print(f"{name:8} {status:10} {secs:5}s  cost={cost}  -> {d / f'{name}_r{a.round}.md'}")
+        bad += status != "ok"
+    sys.exit(1 if bad else 0)
+
+
+IDENTITY = re.compile(r"\b(claude|anthropic|openai|gpt[-\w.]*|codex|opus|fable|astra)\b", re.I)
+
+
+def answers_and_labels(d, rnd):
+    answers = {p.name[: -len(f"_r{rnd}.md")]: p.read_text().strip()
+               for p in sorted(d.glob(f"*_r{rnd}.md")) if p.read_text().strip()}
+    if not answers:
+        sys.exit(f"panel-ask: no round-{rnd} answers in {d}")
+    labels = load_json(d / "labels.json")
+    free = [c for c in "PQRSTUVWXYZ" if c not in labels.values()]
+    random.shuffle(free)
+    for name in sorted(answers):
+        if name not in labels:
+            labels[name] = free.pop()
+    save_json(d / "labels.json", labels)
+    return answers, labels
+
+
+def cmd_label(a):
+    d = Path(a.dir).resolve()
+    answers, labels = answers_and_labels(d, a.round)
+    for name in sorted(answers, key=labels.get):
+        print(f"Panelist {labels[name]}  {d / f'{name}_r{a.round}.md'}")
+
+
+def cmd_pack(a):
+    d = Path(a.dir).resolve()
+    head = d / f"round{a.round + 1}_head.md"
+    if not head.exists():
+        sys.exit(f"panel-ask: write {head} first (verified facts, crux index, instructions; may use {{SELF}})")
+    answers, labels = answers_and_labels(d, a.round)
+    tpl = head.read_text()
+    for name, text in answers.items():
+        for line in text.splitlines():
+            if IDENTITY.search(line):
+                print(f"warning: {name}_r{a.round}.md may reveal a model or family: {line.strip()[:100]}", file=sys.stderr)
+                break
+    for me in answers:
+        order = list(answers)
+        random.shuffle(order)
+        body = "\n\n---\n\n".join(f"## Panelist {labels[n]}\n\n{answers[n]}" for n in order)
+        intro = f"Your own round-{a.round} answer is labelled **Panelist {labels[me]}**. Answers below are in random order.\n\n"
+        dest = d / f"round{a.round + 1}_{me}.md"
+        dest.write_text(tpl.replace("{SELF}", labels[me]) + "\n\n---\n\n" + intro + body + "\n")
+        print(dest)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="panel-ask", description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run", help="run seats for a round, in parallel")
+    r.add_argument("dir")
+    r.add_argument("round", type=int)
+    r.add_argument("seats", nargs="*")
+    r.add_argument("-C", "--cwd", help="directory panelists work in (default: current)")
+    r.add_argument("--add-dir", action="append", default=[], help="extra readable dir for Claude seats")
+    r.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
+    r.add_argument("--timeout", type=int, default=1800, help="seconds per seat (default 1800)")
+    r.add_argument("--fresh", action="store_true", help="start new sessions instead of resuming")
+    lb = sub.add_parser("label", help="assign and print anonymous labels for round N answers")
+    lb.add_argument("dir")
+    lb.add_argument("round", type=int)
+    p = sub.add_parser("pack", help="build round N+1 briefs from round N answers")
+    p.add_argument("dir")
+    p.add_argument("round", type=int)
+    sub.add_parser("seats", help="list known seats")
+    a = ap.parse_args()
+    if a.cmd == "run":
+        cmd_run(a)
+    elif a.cmd == "pack":
+        cmd_pack(a)
+    elif a.cmd == "label":
+        cmd_label(a)
+    else:
+        for k, (f, m) in SEATS.items():
+            print(f"{k:8} {f}:{m}{'  (default)' if k in DEFAULT else ''}")
+
+
+if __name__ == "__main__":
+    main()
