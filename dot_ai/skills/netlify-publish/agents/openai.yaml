@@ -1,0 +1,4 @@
+interface:
+  display_name: "Netlify Publish"
+  short_description: "Publish a static page to a public Netlify URL from the CLI"
+  default_prompt: "Use $netlify-publish to put this page on a public Netlify URL."
