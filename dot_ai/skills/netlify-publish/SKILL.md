@@ -20,7 +20,9 @@ Deploy headlessly with the Netlify CLI. Don't use browser automation or drag-and
 
 ## Publish a new site
 
-1. **Make a folder with an `index.html`.** Keep it next to the project, or under `~/Downloads/<name>-site/` for a one-off.
+1. **Make a folder with an `index.html`.** Put it inside the project's folder: the directory the session was started from,
+   or a subfolder of it (for example `<project>/site/`). Never use `~/Downloads` or a temp/scratch directory, since the
+   folder has to stick around for later redeploys.
    If the HTML came from a claude.ai artifact, it's only a page *fragment*: the artifact host adds the
    `<!doctype html>`, `<head>` and `<body>` itself. Netlify doesn't, so wrap the fragment:
    ```html
