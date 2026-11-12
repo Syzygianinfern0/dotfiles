@@ -1,6 +1,6 @@
 ---
 name: with-the-power-of-friendship
-description: Reach a conclusion on a hard judgment call by running a panel of models from both families (Claude Opus and Fable, GPT-6 Astra and GPT-6.1 Sol) through independent answers, then anonymized cross-critique, with the calling agent as a neutral moderator who writes a decision memo. Use when the user asks for a panel, a discussion or debate between models or agents, several opinions or a second opinion from the other family, wants the models to convince each other, or invokes with-the-power-of-friendship (often at the end of a prompt, as in "...? with-the-power-of-friendship"). Not for questions a quick check of code, docs or data can settle.
+description: Reach a conclusion on a hard judgment call by running a panel of models from both families (Claude Opus 5.5 and Fable 5.2, GPT-6 Astra and GPT-6.1 Sol) through independent answers, then anonymized cross-critique, with the calling agent as a neutral moderator who writes a decision memo. Use when the user asks for a panel, a discussion or debate between models or agents, several opinions or a second opinion from the other family, wants the models to convince each other, or invokes with-the-power-of-friendship (often at the end of a prompt, as in "...? with-the-power-of-friendship"). Not for questions a quick check of code, docs or data can settle.
 ---
 
 # With the power of friendship
@@ -46,7 +46,7 @@ adopted because "would materially change it" is the judgment that failed.)
   Keep it out of the repo unless the user wants the record kept.
 - Dispatcher: `panel-ask` (in `~/bin`). Every seat goes through it, whatever agent you are, so both hosts behave the same.
   `panel-ask seats` lists seats; `panel-ask run -h` shows options.
-- Seats: `opus` (claude:opus), `fable` (claude:fable), `astra` (codex:gpt-6-astra), `sol` (codex:gpt-6.1-sol). Others as
+- Seats: `opus` (claude:claude-opus-5-5), `fable` (claude:claude-fable-5-2), `astra` (codex:gpt-6-astra), `sol` (codex:gpt-6.1-sol). Others as
   `name=claude:<model>` or `name=codex:<model>`.
 - Panelists are read-only: Claude seats get only Read/Grep/Glob under `--restricted` with no MCP or skills; Codex seats
   run in the read-only sandbox without the user's config, MCP servers, plugins or apps. They can read the working

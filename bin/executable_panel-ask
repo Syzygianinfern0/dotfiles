@@ -37,9 +37,10 @@ subscription bills.
 import argparse, json, os, random, re, subprocess, sys, threading, time, uuid
 from pathlib import Path
 
+# Exact model ids, not aliases, so status.tsv records which version answered. Update when models change.
 SEATS = {
-    "opus": ("claude", "opus"),
-    "fable": ("claude", "fable"),
+    "opus": ("claude", "claude-opus-5-5"),
+    "fable": ("claude", "claude-fable-5-2"),
     "astra": ("codex", "gpt-6-astra"),
     "sol": ("codex", "gpt-6.1-sol"),
 }
