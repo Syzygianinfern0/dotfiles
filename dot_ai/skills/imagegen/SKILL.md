@@ -30,30 +30,37 @@ is skipped.
 
 ## Choose providers and models first
 
-Model lineups change every few weeks, so don't rely on the script's defaults. At the start of each image task:
+Model lineups change every few weeks, so don't rely on the script's defaults. Write the prompts YAML first (Workflow
+step 1), then, before generating anything:
 
-1. **Fetch what's available:** `imagegen --list-models --json`. It lists, per provider, the image models the keys can
-   reach, newest first, with release date (OpenAI) or display name (Gemini; its API gives no dates, so the order
-   follows the "Nano Banana" generation), `default` for the script's defaults and `price` (per image, or per million
-   output image tokens for OpenAI) from LiteLLM's price catalog. A provider shown as `null` has no key.
-2. **Ask the user**, in one go (as multiple-choice questions if the agent can ask those):
-   - **Providers:** both, OpenAI only, or Gemini only. Recommend both for a first pass at a new kind of figure, since the
-     two often win on different figures, and one provider when iterating on a figure that already works.
-   - **Model for each chosen provider:** offer the two or three newest models plus the current default. Give each
-     option its date or display name, its `price` (or "price unknown"), and one line on what it's for. Mark the
-     option you recommend (usually the newest full-quality model, not a "lite"/"mini"/"fast" variant). If you don't
-     know how sibling variants differ (e.g. two models released the same day), check the web briefly or say so rather
-     than guess. Skip moving aliases such as `*-latest` unless the user asks, because they change under you.
+1. **Get a quote:** `imagegen <yaml> [--only ...] [-n N] --quote --json`. For every image model each key can reach,
+   newest first, it gives the display name, the provider's one-line description, `run_cost_usd` (estimated cost of
+   this whole run on that model), `per_image_usd`, and `basis`: `measured on N` (median token usage of past images
+   from that model, logged in `~/.cache/imagegen/usage-history.jsonl`) or `guess` (no history yet; can be off by 2x
+   or more). Prices are LiteLLM list prices. A provider missing from the output has no key.
+2. **Ask the user**, in one go (as multiple-choice questions if the agent can ask those). Keep each option to two
+   things: **what the model is** and **what this run would cost on it.**
+   - **Providers:** both, OpenAI only, or Gemini only, each with the run's total for the recommended models (e.g.
+     "Both: ~40 cents"). Recommend both for a first pass at a new kind of figure, since the two often win on
+     different figures, and one provider when iterating on a figure that already works.
+   - **Model for each chosen provider:** offer the two or three newest models plus the current default. Describe
+     each in plain words: its place in the lineup (newest / previous generation; best quality / fast / cheap drafts)
+     and anything known about how it does, e.g. from earlier runs in this session. Then the run cost, e.g.
+     "~50 cents for these 12 images", adding "(rough guess)" when `basis` is `guess`. Leave out release dates, token
+     rates and model-id jargon. Mark the option you recommend (usually the newest full-quality model, not a
+     "lite"/"mini"/"fast" variant). If you don't know how sibling variants differ (e.g. two models released the same
+     day), check the web briefly or say so rather than guess. Skip moving aliases such as `*-latest` unless asked.
    Skip the question entirely if the user already named the providers or models.
 3. **Use the answer** with `--backend openai|gemini|both`, `--openai-model <id>` and `--gemini-model <id>` on every
-   run, and keep using it for the rest of the task without asking again. If the chosen model has no price, say the
-   run's cost estimate will be missing.
-4. If the user keeps choosing a model newer than `DEFAULT_MODELS`, offer to update the defaults in the
-   dotfiles source, `bin/executable_imagegen`, not the deployed copy.
+   run, and keep using it for the rest of the task without asking again.
+4. If the user keeps choosing a model newer than `DEFAULT_MODELS`, offer to update the defaults in the dotfiles
+   source, `bin/executable_imagegen`, not the deployed copy.
+
+`imagegen --list-models [--json]` lists the same models without a quote, for questions like "what's available?".
 
 ## Workflow
 
-1. **Write a prompts YAML** in the project (e.g. `figs/prompts/<topic>.yaml`), one entry per figure:
+1. **Write a prompts YAML** in the project (before choosing models, so the quote covers the real run) (e.g. `figs/prompts/<topic>.yaml`), one entry per figure:
    ```yaml
    defaults: {aspect: "16:9", n: 2}
    figures:
@@ -65,8 +72,9 @@ Model lineups change every few weeks, so don't rely on the script's defaults. At
        refs: [../renders/scene.png]  # optional: restyle / edit this image
    ```
    For a single image, skip the YAML: `imagegen -p "..." --id name [--ref img.png] [--aspect 1:1]`.
-2. **Dry run** with the chosen flags to check the job count: `imagegen <yaml> --dry-run ...`. That's the chosen
-   backends × `n` variants per figure. Each image costs roughly $0.05–0.30, so for big batches (>30 images) say the count and rough cost first.
+2. **Dry run** with the chosen flags: `imagegen <yaml> --dry-run ...`. It lists the jobs (chosen backends × `n`
+   variants per figure) and the estimated cost per backend. Before a run estimated at more than a few dollars,
+   confirm with the user.
 3. **Run it**: `imagegen <yaml> --backend ... --openai-model ... --gemini-model ...`. Output goes to `<yaml dir>/imagegen-out/<yaml name>/` unless `--out` is given.
    In a git repo, put that directory in `.gitignore` or point `--out` at the project's data/output directory, so
    images aren't committed by accident.

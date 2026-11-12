@@ -103,7 +103,8 @@ Transcripts are per machine, so `chat2md` only finds sessions from the host it r
 The `imagegen` skill tells the agent when a generated image fits (illustrations, teasers, concept art) and when to draw with code instead (plots, diagrams, tables). It runs `~/bin/imagegen`, a `uv` script that sends each figure in a prompts YAML to OpenAI and Gemini image models in parallel, keeps every variant, logs prompts, models, token usage and an estimated cost (from LiteLLM's public price catalog, cached daily in `~/.cache/imagegen/`) to `manifest.json` and builds a contact sheet. API keys come from the environment or `~/.config/imagegen.env` (mode 600, not managed by chezmoi). Default model ids are at the top of the script; `imagegen --list-models` shows what the keys can reach.
 
 ```sh
-imagegen figures.yaml --dry-run     # jobs and output dir
+imagegen figures.yaml --quote       # this run's estimated cost on every available model
+imagegen figures.yaml --dry-run     # jobs, output dir and estimated cost
 imagegen figures.yaml               # both backends, n variants each
 imagegen -p "..." --id name         # one-off prompt
 ```

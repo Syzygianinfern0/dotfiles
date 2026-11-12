@@ -11,6 +11,7 @@
   imagegen -p "a red fox in the snow" --id fox   # one-off prompt, no YAML
   imagegen -p "make it night time" --ref fox.png --id fox_night
   imagegen --list-models [--json]                # image models your keys can use, newest first
+  imagegen figures.yaml --quote [--json]         # what this run would cost on each available model
   imagegen --sheet-only OUT_DIR                  # rebuild the contact sheet
 
 Keys: OPENAI_API_KEY and GEMINI_API_KEY (or GOOGLE_API_KEY) from the environment, else from
@@ -63,6 +64,10 @@ OPENAI_SIZES = {"1:1": "1024x1024", "3:2": "1536x1024", "16:9": "1536x1024", "4:
 PRICE_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 PRICE_CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "imagegen" / "litellm-prices.json"
 _catalog = None
+# Token usage of every image made, used to quote future runs (~/.cache/imagegen/usage-history.jsonl).
+HISTORY = PRICE_CACHE.parent / "usage-history.jsonl"
+# Per-image token guesses for a model with no history yet: thinking/text out and image out.
+GUESS = {"gemini": dict(text_out=1000, image_out=1120), "openai": dict(text_out=0, image_out=3000)}
 KEY_VARS = {"openai": ["OPENAI_API_KEY"], "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"]}
 
 
@@ -318,6 +323,80 @@ def list_models(as_json=False):
     print(f"prices: LiteLLM catalog, fetched {price_date() or 'never'}")
 
 
+# ── quotes ──────────────────────────────────────────────────────────────────────
+
+def record_usage(r):
+    if not r.get("usage"):
+        return
+    HISTORY.parent.mkdir(parents=True, exist_ok=True)
+    with HISTORY.open("a") as f:
+        f.write(json.dumps(dict(backend=r["backend"], model=r["model"], aspect=r["aspect"],
+                                refs=len(r.get("refs") or []), usage=r["usage"], t=int(time.time()))) + "\n")
+
+
+def _history():
+    try:
+        return [json.loads(l) for l in HISTORY.read_text().splitlines() if l.strip()]
+    except (OSError, ValueError):
+        return []
+
+
+def typical_usage(backend, model, aspect, history):
+    """Median token usage of past images from this model (same aspect if any), and how it was measured."""
+    rows = [h for h in history if h["backend"] == backend and h["model"].removesuffix("-preview")
+            == model.removesuffix("-preview") and "image_out" in h["usage"]]
+    same = [h for h in rows if h["aspect"] == aspect]
+    use = same or rows
+    if not use:
+        return dict(GUESS[backend]), "guess"
+    med = lambda k: sorted(h["usage"].get(k, 0) for h in use)[len(use) // 2]
+    return dict(text_out=med("text_out"), image_out=med("image_out")), \
+        f"measured on {len(use)}" + ("" if same else ", other sizes")
+
+
+def quote_model(backend, model, jobs, history):
+    """Estimated cost of running `jobs` (one backend's share) on `model`."""
+    total, bases = 0.0, set()
+    for j in jobs:
+        u, basis = typical_usage(backend, model, j["aspect"], history)
+        u.update(text_in=len(j["prompt"]) // 4, image_in=0)
+        c = estimate_cost(backend, model, u)
+        if c is None:
+            return None, "no price"
+        total += c
+        bases.add(basis)
+    return round(total, 3), ("guess" if bases == {"guess"} else
+                             "partly guessed" if "guess" in bases else sorted(bases)[0])
+
+
+def quote(jobs, as_json=False):
+    """For every model each key can reach: what it is and what this whole run would cost on it."""
+    avail, history = available_models(), _history()
+    out = {}
+    for backend, rows in avail.items():
+        if rows is None:
+            continue
+        bj = [j for j in jobs if j["backend"] == backend]
+        out[backend] = dict(images=len(bj), models=[])
+        for r in rows:
+            cost, basis = quote_model(backend, r["id"], bj, history)
+            out[backend]["models"].append(dict(id=r["id"], name=r["name"], about=r.get("note", ""),
+                                               released=r.get("date"), default=r["default"],
+                                               run_cost_usd=cost, per_image_usd=round(cost / len(bj), 3)
+                                               if cost is not None and bj else None, basis=basis))
+    if as_json:
+        return print(json.dumps(dict(out, price_snapshot=price_date()), indent=1))
+    for backend, q in out.items():
+        print(f"{backend}: {q['images']} images")
+        for m in q["models"]:
+            cost = f"~${m['run_cost_usd']:.2f}" if m["run_cost_usd"] is not None else "unknown"
+            each = f"(${m['per_image_usd']:.3f} each, {m['basis']})" if m["per_image_usd"] is not None else ""
+            name = "" if m["name"] == m["id"] else m["name"]
+            print(f"  {m['id']:28s} {cost:>7s}  {each:34s} {name}{'  [default]' if m['default'] else ''}")
+    print("estimates from past token usage where measured, LiteLLM list prices "
+          f"({price_date() or 'no price data'}); not a bill")
+
+
 # ── jobs ────────────────────────────────────────────────────────────────────────
 
 def build_jobs(spec, backends, only, n_override, base):
@@ -444,7 +523,9 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--dry-run", action="store_true", help="list the jobs, make no API calls")
     ap.add_argument("--list-models", action="store_true", help="image models your keys can use, newest first")
-    ap.add_argument("--json", action="store_true", help="with --list-models: machine-readable output")
+    ap.add_argument("--quote", action="store_true",
+                    help="estimated cost of this run on every available model, no API calls for images")
+    ap.add_argument("--json", action="store_true", help="with --list-models or --quote: machine-readable output")
     ap.add_argument("--sheet-only", type=Path, metavar="OUT_DIR")
     a = ap.parse_args()
 
@@ -464,6 +545,9 @@ def main():
         base, default_out = a.prompts.parent, a.prompts.parent / "imagegen-out" / a.prompts.stem
     out = (a.out or default_out).resolve()
 
+    only = set(a.only.split(",")) if a.only else None
+    if a.quote:
+        return quote(build_jobs(spec, ["openai", "gemini"], only, a.n, base), a.json)
     backends = ["openai", "gemini"] if a.backend == "both" else [a.backend]
     if not a.dry_run:
         for b in [b for b in backends if not have_key(b)]:
@@ -471,7 +555,6 @@ def main():
         backends = [b for b in backends if have_key(b)]
         if not backends:
             sys.exit("no backend has an API key (OPENAI_API_KEY / GEMINI_API_KEY or ~/.config/imagegen.env)")
-    only = set(a.only.split(",")) if a.only else None
     jobs = build_jobs(spec, backends, only, a.n, base)
     models = {"openai": a.openai_model, "gemini": a.gemini_model}
 
@@ -479,6 +562,10 @@ def main():
         for j in jobs:
             print(f"{j['backend']:7s} {models[j['backend']]:22s} {j['id']}_v{j['k']}  [{j['aspect']}]"
                   + (f"  refs={len(j['refs'])}" if j["refs"] else ""))
+        history = _history()
+        for b in backends:
+            cost, basis = quote_model(b, models[b], [j for j in jobs if j["backend"] == b], history)
+            print(f"{b}: " + (f"~${cost:.2f} estimated ({basis})" if cost is not None else "cost unknown"))
         print(f"{len(jobs)} images -> {out}")
         return
 
@@ -493,6 +580,7 @@ def main():
         for r in ex.map(lambda j: run_job(j, out, models), jobs):
             if r["status"] == "ok":
                 new.append(r)
+                record_usage(r)
             key = (r["id"], r["backend"], r["k"])
             if r["status"] == "exists" and key in records:
                 r = records[key]  # keep the original record (model, timing)
