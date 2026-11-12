@@ -7,24 +7,23 @@
 {{-   if $bins }}{{ $ccs = printf "PATH=%s:$PATH ccstatusline" (dir (last $bins)) }}{{ end -}}
 {{- end -}}
 {
+  "cleanupPeriodDays": 365,
   "model": "opus",
 {{- if $ccs }}
   "hooks": {
     "PreToolUse": [
       {
-        "_tag": "ccstatusline-managed",
+        "matcher": "Skill",
         "hooks": [
           {
             "type": "command",
             "command": {{ printf "%s --hook" $ccs | toJson }}
           }
-        ],
-        "matcher": "Skill"
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
-        "_tag": "ccstatusline-managed",
         "hooks": [
           {
             "type": "command",
@@ -50,9 +49,8 @@
       "effortLevel": "medium"
     }
   },
-  "tui": "default",
+  "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
-  "cleanupPeriodDays": 365,
   "idleCompaction": false
 }
