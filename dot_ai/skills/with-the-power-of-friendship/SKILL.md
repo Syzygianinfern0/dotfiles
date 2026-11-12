@@ -49,8 +49,13 @@ adopted because "would materially change it" is the judgment that failed.)
 - Seats: `opus` (claude:opus), `fable` (claude:fable), `astra` (codex:gpt-6-astra), `sol` (codex:gpt-6.1-sol). Others as
   `name=claude:<model>` or `name=codex:<model>`.
 - Panelists are read-only: Claude seats get only Read/Grep/Glob under `--restricted` with no MCP or skills; Codex seats
-  run in the read-only sandbox. They can read the working directory (`-C`), the panel directory, and for Claude seats
-  any `--add-dir`. Put every file they need in one of those.
+  run in the read-only sandbox without the user's config, MCP servers, plugins or apps. They can read the working
+  directory (`-C`), the panel directory, and for Claude seats any `--add-dir`. Put every file they need in one of those.
+- Web access is off for every seat by default. Pass `--web` (to every round of that panel) when the answer depends on
+  outside facts you cannot settle and put in the packet yourself: current versions, prices, recent papers or releases,
+  what other projects do. It gives Claude seats WebSearch/WebFetch and Codex seats live web search. Leave it off for
+  judgment calls about the user's own code, design or plan: searching costs time and money and pulls the seats toward
+  whatever they find instead of independent reasoning. Say in the packet's context that seats may search.
 
 ## 2. Round 1: independent and blind
 
@@ -75,7 +80,7 @@ What would change my mind:
 Is this the right question?:
 ```
 
-Run: `panel-ask run <dir> 1 [-C <workdir>] [--add-dir <dir>]`. It runs the seats in parallel (often 2–10 minutes; run it
+Run: `panel-ask run <dir> 1 [-C <workdir>] [--add-dir <dir>] [--web]`. It runs the seats in parallel (often 2–10 minutes; run it
 in the background if your host allows and wait for completion, don't poll), writes `<seat>_r1.md`, and records session
 ids in `sessions.json` and outcomes in `status.tsv`.
 
@@ -151,8 +156,9 @@ process narration. End with the path to the memo and the cost.
 - **Family splits**: if the split falls along Claude vs GPT lines, say so (a signal, not noise)
 - **Cheapest next test** for each open crux; questions only the user can decide
 - **Moderator's view**, labelled as yours, including where you disagree with the panel
-- **Provenance**: seats and models, the label key, rounds, failures or missing seats, cost (Claude seats report it;
-  Codex cost is "unknown", never zero), and links to every brief and answer
+- **Provenance**: seats and models, the label key, rounds, failures or missing seats, cost (from `status.tsv`: Claude seats
+  report it, Codex seats are priced from token usage at LiteLLM list prices; an "unknown" stays unknown, never zero;
+  both are API-equivalent figures, not a subscription bill), whether `--web` was on, and links to every brief and answer
 
 Representation check: only if your recommendation goes against most of the panel, or you paraphrase a dissent instead
 of quoting it, resume that seat with one short question ("Is this your position? ≤50 words") and quote the reply
@@ -167,5 +173,6 @@ verbatim.
 ## Asymmetries (stated, not hidden)
 
 - Isolation differs: Codex seats are sandboxed read-only at the OS level; Claude seats have no write or shell tools.
-- Claude seats report cost per call; Codex seats do not.
+- Cost: Claude seats report it themselves; Codex seats are priced by `panel-ask` from token counts and LiteLLM's
+  catalog, so a model missing from the catalog shows "unknown".
 - Seat names map to model slugs in `panel-ask`; update `SEATS` there when models change.

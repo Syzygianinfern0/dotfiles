@@ -69,7 +69,7 @@ Each agent keeps its own memory, outside the repo: Claude under `~/.claude/proje
 
 ## Model panels
 
-The `with-the-power-of-friendship` skill has the agent moderate a panel of Claude Opus, Claude Fable, GPT-6 Astra and GPT-6.1 Sol: independent first answers, then anonymized cross-critique, then a decision memo with the surviving dissent. Every seat, from either family, goes through `~/bin/panel-ask`, which calls `claude -p` or `codex exec` read-only, resumes seats by session id in later rounds, and logs status and cost to the panel directory. It needs both CLIs logged in on the machine. Seat names map to model slugs at the top of the script.
+The `with-the-power-of-friendship` skill has the agent moderate a panel of Claude Opus, Claude Fable, GPT-6 Astra and GPT-6.1 Sol: independent first answers, then anonymized cross-critique, then a decision memo with the surviving dissent. Every seat, from either family, goes through `~/bin/panel-ask`, which calls `claude -p` or `codex exec` read-only, resumes seats by session id in later rounds, and logs status and cost to the panel directory. Codex seats run with `--ignore-user-config` and the apps/plugins features off, so they get no MCP servers or connectors; their cost is computed from token usage at LiteLLM list prices (catalog cached daily in `~/.cache/panel-ask/`). Web access is off for all seats unless `run` gets `--web`, which gives Claude seats WebSearch/WebFetch and Codex seats live web search (Codex otherwise searches by default, so it is set to `web_search="disabled"`). It needs both CLIs logged in on the machine. Seat names map to model slugs at the top of the script.
 
 ```sh
 panel-ask seats                       # known seats
@@ -77,6 +77,7 @@ panel-ask run <dir> 1 [seat ...]      # run round 1 from <dir>/round1.md
 panel-ask label <dir> 1               # anonymous labels for the round-1 answers
 panel-ask pack <dir> 1                # round-2 briefs from <dir>/round2_head.md + answers
 panel-ask run <dir> 2                 # round 2, resuming each seat
+panel-ask run <dir> 1 --web           # let every seat search the web (pass it every round)
 ```
 
 Isolation differs by family: Codex seats run in Codex's read-only sandbox; Claude seats get only Read, Grep and Glob under `--restricted`, with no MCP servers or skills. Claude reports cost per call; Codex cost is recorded as unknown.
