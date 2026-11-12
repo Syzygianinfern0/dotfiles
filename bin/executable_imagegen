@@ -474,7 +474,7 @@ def contact_sheet(out, thumb_h=300):
         ims = []
         for r in rs:
             im = Image.open(r["file"]).convert("RGB")
-            ims.append((im.resize((round(im.width * thumb_h / im.height), thumb_h)), f"{r['backend']} v{r['k']}"))
+            ims.append((im.resize((round(im.width * thumb_h / im.height), thumb_h)), f"{r['backend']} v{r['k']} · {r.get('model') or '?'}"))
         tiles.append((fid, note, ims))
     width = label_w + max(sum(im.width + pad for im, _ in ims) for *_, ims in tiles) + pad
     sheet = Image.new("RGB", (width, len(tiles) * (thumb_h + cap + pad) + pad), "white")
@@ -487,7 +487,10 @@ def contact_sheet(out, thumb_h=300):
         x = label_w
         for im, lab in ims:
             sheet.paste(im, (x, y))
-            draw.text((x, y + thumb_h + 4), lab, fill="#333", font=font(16))
+            f = font(16)
+            while draw.textlength(lab, font=f) > im.width and len(lab) > 8:  # keep labels within their tile
+                lab = lab[:-2] + "…"
+            draw.text((x, y + thumb_h + 4), lab, fill="#333", font=f)
             x += im.width + pad
         y += thumb_h + cap + pad
     path = out / "contact_sheet.png"
