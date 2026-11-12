@@ -19,6 +19,7 @@ The repo sets up two agents, [Claude Code](https://claude.com/claude-code) and [
 
 ~/bin/chat2md                  ← bin/executable_chat2md   (read past sessions of either agent)
 ~/bin/panel-ask                ← bin/executable_panel-ask (run a cross-family model panel)
+~/bin/imagegen                 ← bin/executable_imagegen  (batch image generation, OpenAI + Gemini)
 ```
 
 `~/.claude` and `~/.codex` are created with mode 700.
@@ -96,6 +97,16 @@ chat2md -o notes.md <id>   # write to a file
 | Find an ID | `/status`, or `claude --resume` | `codex resume`, or the file name |
 
 Transcripts are per machine, so `chat2md` only finds sessions from the host it runs on. Codex compresses most logs with zstd; reading them needs Python 3.14+ or the `zstd` command.
+
+## Image generation
+
+The `imagegen` skill tells the agent when a generated image fits (illustrations, teasers, concept art) and when to draw with code instead (plots, diagrams, tables). It runs `~/bin/imagegen`, a `uv` script that sends each figure in a prompts YAML to OpenAI and Gemini image models in parallel, keeps every variant, logs prompts, models, token usage and an estimated cost to `manifest.json` and builds a contact sheet. API keys come from the environment or `~/.config/imagegen.env` (mode 600, not managed by chezmoi). Default model ids are at the top of the script; `imagegen --list-models` shows what the keys can reach.
+
+```sh
+imagegen figures.yaml --dry-run     # jobs and output dir
+imagegen figures.yaml               # both backends, n variants each
+imagegen -p "..." --id name         # one-off prompt
+```
 
 ## Adding something new
 

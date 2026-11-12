@@ -1,0 +1,363 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["openai>=1.60", "google-genai>=1.30", "pillow>=10", "pyyaml>=6"]
+# ///
+"""imagegen: generate illustrative images (slides, teasers, concept art) with hosted image models.
+
+  imagegen figures.yaml                          # every figure in the file, both backends
+  imagegen figures.yaml --only teaser -n 4       # more variants of one figure
+  imagegen figures.yaml --backend gemini --dry-run
+  imagegen -p "a red fox in the snow" --id fox   # one-off prompt, no YAML
+  imagegen -p "make it night time" --ref fox.png --id fox_night
+  imagegen --list-models                         # image models your keys can use
+  imagegen --sheet-only OUT_DIR                  # rebuild the contact sheet
+
+Keys: OPENAI_API_KEY and GEMINI_API_KEY (or GOOGLE_API_KEY) from the environment, else from
+~/.config/imagegen.env (KEY=VALUE lines, mode 600; path overridable with IMAGEGEN_ENV).
+A backend with no key is skipped with a warning.
+
+Prompts file (YAML):
+  defaults: {aspect: "16:9", n: 2, style: "..."}      # style is appended to every prompt
+  figures:
+    - id: teaser                                      # used in file names
+      note: slide 3                                   # free-form, shown on the contact sheet
+      prompt: "..."
+      aspect: "16:9"                                  # 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4
+      n: 3                                            # variants per backend
+      refs: [render.png]                              # reference images, relative to the YAML
+      style: null                                     # override or drop the default style
+
+Output: <out>/<backend>/<id>_v<k>.png, <out>/manifest.json (prompt, model, status, token usage and
+estimated cost of every image) and <out>/contact_sheet.png (one row per figure). <out> defaults to
+<yaml dir>/imagegen-out/<yaml name> (./imagegen-out/<id> for -p). Existing images are kept, so
+re-running only fills gaps; raise -n for more variants or delete a file to redo it.
+"""
+
+import argparse
+import base64
+import io
+import json
+import os
+import stat
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import yaml
+from PIL import Image, ImageDraw, ImageFont
+
+DEFAULT_MODELS = {
+    "openai": "gpt-image-2",
+    # Google has shipped image models both with and without a "-preview" suffix; both are tried.
+    "gemini": "gemini-3-pro-image",
+}
+# OpenAI image models take a fixed set of sizes; pick the closest one to the requested aspect.
+OPENAI_SIZES = {"1:1": "1024x1024", "3:2": "1536x1024", "16:9": "1536x1024", "4:3": "1536x1024",
+                "2:3": "1024x1536", "9:16": "1024x1536", "3:4": "1024x1536"}
+# Estimated USD per million tokens: (text input, image input, output). From public price pages
+# (late 2026); check the provider's billing page for real charges. Unknown models get no estimate,
+# but their token counts are still logged.
+PRICES = {
+    "gpt-image-2": (5.0, 8.0, 30.0),
+    "gemini-3-pro-image": (2.0, 2.0, 120.0),
+    "gemini-2.5-flash-image": (0.3, 0.3, 30.0),
+}
+KEY_VARS = {"openai": ["OPENAI_API_KEY"], "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"]}
+
+
+def load_key_file():
+    """Fill missing key variables from the env file. Never prints values."""
+    path = Path(os.environ.get("IMAGEGEN_ENV", Path.home() / ".config/imagegen.env")).expanduser()
+    if not path.exists():
+        return
+    if path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        print(f"warning: {path} is readable by others; run: chmod 600 {path}", file=sys.stderr)
+    wanted = {v for vs in KEY_VARS.values() for v in vs}
+    for line in path.read_text().splitlines():
+        line = line.strip().removeprefix("export ").strip()
+        if "=" not in line or line.startswith("#"):
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.strip(), v.strip().strip("'\"")
+        if k in wanted and v and not os.environ.get(k):
+            os.environ[k] = v
+
+
+def have_key(backend):
+    return any(os.environ.get(v) for v in KEY_VARS[backend])
+
+
+# ── backends ────────────────────────────────────────────────────────────────────
+
+def gen_openai(prompt, aspect, refs, model):
+    from openai import OpenAI
+    client = OpenAI()
+    size = OPENAI_SIZES.get(aspect, "1536x1024")
+    if refs:
+        files = [open(r, "rb") for r in refs]
+        try:
+            res = client.images.edit(model=model, image=files, prompt=prompt, size=size, quality="high")
+        finally:
+            for f in files:
+                f.close()
+    else:
+        res = client.images.generate(model=model, prompt=prompt, size=size, quality="high", n=1)
+    u = getattr(res, "usage", None)
+    usage = None
+    if u is not None:
+        det = getattr(u, "input_tokens_details", None)
+        usage = dict(text_in=getattr(det, "text_tokens", None) if det else u.input_tokens,
+                     image_in=getattr(det, "image_tokens", 0) if det else 0,
+                     out=u.output_tokens)
+    return Image.open(io.BytesIO(base64.b64decode(res.data[0].b64_json))), model, usage
+
+
+def gen_gemini(prompt, aspect, refs, model):
+    from google import genai
+    from google.genai import types
+    client = genai.Client()
+    contents = [Image.open(r) for r in refs] + [prompt]
+    config = types.GenerateContentConfig(response_modalities=["IMAGE"],
+                                         image_config=types.ImageConfig(aspect_ratio=aspect))
+    candidates = [model] if model.endswith("-preview") else [model, model + "-preview"]
+    last_err = None
+    for m in candidates:
+        try:
+            res = client.models.generate_content(model=m, contents=contents, config=config)
+        except Exception as e:  # unknown model id -> try the next spelling
+            if "not found" in str(e).lower() or "404" in str(e):
+                last_err = e
+                continue
+            raise
+        for cand in res.candidates or []:
+            for part in (cand.content.parts if cand.content else None) or []:
+                if part.inline_data and part.inline_data.data:
+                    u = res.usage_metadata
+                    usage = None
+                    if u is not None:
+                        image_in = sum(d.token_count or 0 for d in (u.prompt_tokens_details or [])
+                                       if "IMAGE" in str(d.modality))
+                        usage = dict(text_in=(u.prompt_token_count or 0) - image_in, image_in=image_in,
+                                     out=(u.candidates_token_count or 0) + (u.thoughts_token_count or 0))
+                    return Image.open(io.BytesIO(part.inline_data.data)), m, usage
+        reason = res.candidates[0].finish_reason if res.candidates else res.prompt_feedback
+        raise RuntimeError(f"no image in response ({reason})")
+    raise last_err
+
+
+BACKENDS = {"openai": gen_openai, "gemini": gen_gemini}
+
+
+def list_models():
+    if have_key("openai"):
+        from openai import OpenAI
+        ids = sorted(m.id for m in OpenAI().models.list() if "image" in m.id or "dall-e" in m.id)
+        print("openai:", *ids, sep="\n  ")
+    else:
+        print("openai: no key (OPENAI_API_KEY)")
+    if have_key("gemini"):
+        from google import genai
+        client = genai.Client()  # keep a reference: the pager needs it open while iterating
+        ids = sorted(m.name.removeprefix("models/") for m in client.models.list() if "image" in m.name)
+        print("gemini:", *ids, sep="\n  ")
+    else:
+        print("gemini: no key (GEMINI_API_KEY)")
+
+
+def estimate_cost(model, usage):
+    price = PRICES.get(model.removesuffix("-preview"))
+    if not price or not usage:
+        return None
+    return round(sum((usage.get(k) or 0) * p for k, p in zip(("text_in", "image_in", "out"), price)) / 1e6, 4)
+
+
+# ── jobs ────────────────────────────────────────────────────────────────────────
+
+def build_jobs(spec, backends, only, n_override, base):
+    d = spec.get("defaults") or {}
+    jobs = []
+    for fig in spec["figures"]:
+        if only and fig["id"] not in only:
+            continue
+        style = fig.get("style", d.get("style"))
+        prompt = fig["prompt"].strip() + (f"\n\nStyle: {style.strip()}" if style else "")
+        refs = [str((base / r).expanduser().resolve()) for r in fig.get("refs") or []]
+        for r in refs:
+            if not Path(r).exists():
+                sys.exit(f"{fig['id']}: reference image not found: {r}")
+        n = n_override or fig.get("n", d.get("n", 2))
+        note = str(fig.get("note", fig.get("slide", "")) or "")
+        for b in backends:
+            for k in range(n):
+                jobs.append(dict(id=fig["id"], note=note, backend=b, k=k, prompt=prompt,
+                                 aspect=str(fig.get("aspect", d.get("aspect", "16:9"))), refs=refs))
+    if only and not jobs:
+        sys.exit(f"no figure matches --only {','.join(sorted(only))}")
+    return jobs
+
+
+def run_job(job, out, models, retries=2):
+    path = out / job["backend"] / f"{job['id']}_v{job['k']}.png"
+    if path.exists():
+        return dict(job, file=str(path), status="exists")
+    for attempt in range(retries + 1):
+        try:
+            t = time.time()
+            img, model, usage = BACKENDS[job["backend"]](job["prompt"], job["aspect"], job["refs"],
+                                                         models[job["backend"]])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(path)
+            return dict(job, file=str(path), model=model, status="ok", seconds=round(time.time() - t, 1),
+                        usage=usage, est_cost_usd=estimate_cost(model, usage))
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+            permanent = ("safety", "moderation", "policy", "permission", "does not exist", "not found",
+                         "invalid", "api key")
+            if attempt < retries and not any(s in err.lower() for s in permanent):
+                time.sleep(5 * (attempt + 1))
+                continue
+            return dict(job, model=models[job["backend"]], status="error", error=err[:500])
+
+
+# ── contact sheet ───────────────────────────────────────────────────────────────
+
+def font(size):
+    for f in ("DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+              "/System/Library/Fonts/Helvetica.ttc"):
+        try:
+            return ImageFont.truetype(f, size)
+        except OSError:
+            pass
+    return ImageFont.load_default()
+
+
+def contact_sheet(out, thumb_h=300):
+    """One row per figure id, every variant of every backend left to right."""
+    records = json.loads((out / "manifest.json").read_text())
+    rows = {}
+    for r in records:
+        if r.get("file") and Path(r["file"]).exists():
+            rows.setdefault((r["id"], r.get("note", "")), []).append(r)
+    if not rows:
+        return None
+    label_w, pad, cap = 260, 12, 26
+    tiles = []
+    for (fid, note), rs in rows.items():
+        rs.sort(key=lambda r: (r["backend"], r["k"]))
+        ims = []
+        for r in rs:
+            im = Image.open(r["file"]).convert("RGB")
+            ims.append((im.resize((round(im.width * thumb_h / im.height), thumb_h)), f"{r['backend']} v{r['k']}"))
+        tiles.append((fid, note, ims))
+    width = label_w + max(sum(im.width + pad for im, _ in ims) for *_, ims in tiles) + pad
+    sheet = Image.new("RGB", (width, len(tiles) * (thumb_h + cap + pad) + pad), "white")
+    draw = ImageDraw.Draw(sheet)
+    y = pad
+    for fid, note, ims in tiles:
+        draw.text((pad, y + 4), fid, fill="black", font=font(20))
+        if note:
+            draw.text((pad, y + 32), note[:28], fill="#666", font=font(16))
+        x = label_w
+        for im, lab in ims:
+            sheet.paste(im, (x, y))
+            draw.text((x, y + thumb_h + 4), lab, fill="#333", font=font(16))
+            x += im.width + pad
+        y += thumb_h + cap + pad
+    path = out / "contact_sheet.png"
+    sheet.save(path)
+    return path
+
+
+def cost_summary(new, records):
+    """Estimated spend of this run and of everything in the manifest. Failed calls are not billed."""
+    def total(rs):
+        rs = [r for r in rs if r.get("status") == "ok"]
+        known = [r["est_cost_usd"] for r in rs if r.get("est_cost_usd") is not None]
+        s = f"~${sum(known):.2f} for {len(known)} images"
+        return s + (f" (+{len(rs) - len(known)} with no estimate)" if len(known) < len(rs) else "")
+    return f"estimated cost: this run {total(new)}; whole manifest {total(records)}"
+
+
+# ── main ────────────────────────────────────────────────────────────────────────
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("prompts", nargs="?", type=Path, help="prompts YAML")
+    ap.add_argument("-p", "--prompt", help="one-off prompt instead of a YAML file")
+    ap.add_argument("--id", default="image", help="file name for -p (default: image)")
+    ap.add_argument("--aspect", default="16:9", help="aspect for -p (default: 16:9)")
+    ap.add_argument("--ref", action="append", default=[], help="reference image for -p (repeatable)")
+    ap.add_argument("--backend", choices=["openai", "gemini", "both"], default="both")
+    ap.add_argument("--only", help="comma-separated figure ids")
+    ap.add_argument("-n", type=int, help="variants per figure per backend (overrides the file)")
+    ap.add_argument("--out", type=Path, help="output directory")
+    ap.add_argument("--openai-model", default=DEFAULT_MODELS["openai"])
+    ap.add_argument("--gemini-model", default=DEFAULT_MODELS["gemini"])
+    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--dry-run", action="store_true", help="list the jobs, make no API calls")
+    ap.add_argument("--list-models", action="store_true")
+    ap.add_argument("--sheet-only", type=Path, metavar="OUT_DIR")
+    a = ap.parse_args()
+
+    load_key_file()
+    if a.list_models:
+        return list_models()
+    if a.sheet_only:
+        return print(contact_sheet(a.sheet_only))
+    if bool(a.prompts) == bool(a.prompt):
+        ap.error("give either a prompts YAML or -p PROMPT")
+
+    if a.prompt:
+        spec = {"figures": [{"id": a.id, "prompt": a.prompt, "aspect": a.aspect, "refs": a.ref, "n": 1}]}
+        base, default_out = Path.cwd(), Path.cwd() / "imagegen-out" / a.id
+    else:
+        spec = yaml.safe_load(a.prompts.read_text())
+        base, default_out = a.prompts.parent, a.prompts.parent / "imagegen-out" / a.prompts.stem
+    out = (a.out or default_out).resolve()
+
+    backends = ["openai", "gemini"] if a.backend == "both" else [a.backend]
+    if not a.dry_run:
+        for b in [b for b in backends if not have_key(b)]:
+            print(f"warning: no API key for {b}, skipping it", file=sys.stderr)
+        backends = [b for b in backends if have_key(b)]
+        if not backends:
+            sys.exit("no backend has an API key (OPENAI_API_KEY / GEMINI_API_KEY or ~/.config/imagegen.env)")
+    only = set(a.only.split(",")) if a.only else None
+    jobs = build_jobs(spec, backends, only, a.n, base)
+    models = {"openai": a.openai_model, "gemini": a.gemini_model}
+
+    if a.dry_run:
+        for j in jobs:
+            print(f"{j['backend']:7s} {models[j['backend']]:22s} {j['id']}_v{j['k']}  [{j['aspect']}]"
+                  + (f"  refs={len(j['refs'])}" if j["refs"] else ""))
+        print(f"{len(jobs)} images -> {out}")
+        return
+
+    out.mkdir(parents=True, exist_ok=True)
+    manifest_path = out / "manifest.json"
+    records = {(r["id"], r["backend"], r["k"]): r for r in
+               (json.loads(manifest_path.read_text()) if manifest_path.exists() else [])}
+    print(f"{len(jobs)} images -> {out}", flush=True)
+    new = []
+    with ThreadPoolExecutor(a.workers) as ex:
+        for r in ex.map(lambda j: run_job(j, out, models), jobs):
+            if r["status"] == "ok":
+                new.append(r)
+            key = (r["id"], r["backend"], r["k"])
+            if r["status"] == "exists" and key in records:
+                r = records[key]  # keep the original record (model, timing)
+            records[key] = r
+            print(f"  [{r['status']:6s}] {r['backend']:7s} {r['id']}_v{r['k']}  {r.get('error') or r.get('file')}",
+                  flush=True)
+    manifest_path.write_text(json.dumps(sorted(records.values(), key=lambda r: (r["id"], r["backend"], r["k"])),
+                                        indent=1))
+    n_err = sum(r["status"] == "error" for r in records.values())
+    print(f"contact sheet: {contact_sheet(out)}" + (f"   ({n_err} failed, see manifest.json)" if n_err else ""))
+    print(cost_summary(new, records.values()))
+    sys.exit(1 if n_err and n_err == len(jobs) else 0)
+
+
+if __name__ == "__main__":
+    main()

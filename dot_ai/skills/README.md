@@ -7,7 +7,7 @@ To turn one on, add a one-line link file containing `../../.ai/skills/<name>`:
 - Claude: `private_dot_claude/skills/symlink_<name>`
 - Codex: `private_dot_codex/skills/symlink_<name>`
 
-Delete the link file to turn it off again. Currently linked (both agents): `with-the-power-of-friendship`, `netlify-publish`.
+Delete the link file to turn it off again. Currently linked (both agents): `with-the-power-of-friendship`, `netlify-publish`, `imagegen`.
 
 | Skill | Origin | Notes |
 |---|---|---|
@@ -20,3 +20,4 @@ Delete the link file to turn it off again. Currently linked (both agents): `with
 | cursor-canvas | old setup, Mac Codex | Codex + Cursor Canvas specific |
 | with-the-power-of-friendship | swarm5 Claude Code, 2026-11-06 | Uses `~/bin/panel-ask` (needs both `claude` and `codex` CLIs) |
 | netlify-publish | Mac Claude Code, 2026-11-08 | Uses `npx netlify-cli`; login token stays in the CLI's own config, not here |
+| imagegen | swarm5 Claude Code, 2026-11-12 | Uses `~/bin/imagegen` (OpenAI + Gemini image APIs); keys in `~/.config/imagegen.env`, never in the repo |

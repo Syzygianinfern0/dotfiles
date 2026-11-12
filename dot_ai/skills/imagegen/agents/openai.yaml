@@ -1,0 +1,4 @@
+interface:
+  display_name: "Image Generation"
+  short_description: "Generate illustrative images with OpenAI and Gemini image models"
+  default_prompt: "Use $imagegen to generate an illustration for this."
