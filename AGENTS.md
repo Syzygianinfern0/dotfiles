@@ -19,7 +19,7 @@
 ## Secrets
 
 - age encryption. Identity at `~/.config/chezmoi/key.txt`; passphrase-protected copy in `key.txt.age`.
-- Encrypted targets: `encrypted_private_dot_netrc.age`, ssh config. Edit via `chezmoi edit`; never write decrypted content into the source dir.
+- Encrypted targets: `encrypted_private_dot_netrc.age`, ssh config, `~/.config/imagegen.env` (image API keys). Edit via `chezmoi edit`; never write decrypted content into the source dir.
 - Never print credential-helper, netrc, or token output unfiltered.
 
 ## Workflow

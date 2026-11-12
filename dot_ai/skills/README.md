@@ -20,4 +20,4 @@ Delete the link file to turn it off again. Currently linked (both agents): `with
 | cursor-canvas | old setup, Mac Codex | Codex + Cursor Canvas specific |
 | with-the-power-of-friendship | swarm5 Claude Code, 2026-11-06 | Uses `~/bin/panel-ask` (needs both `claude` and `codex` CLIs) |
 | netlify-publish | Mac Claude Code, 2026-11-08 | Uses `npx netlify-cli`; login token stays in the CLI's own config, not here |
-| imagegen | swarm5 Claude Code, 2026-11-12 | Uses `~/bin/imagegen` (OpenAI + Gemini image APIs); keys in `~/.config/imagegen.env`, never in the repo |
+| imagegen | swarm5 Claude Code, 2026-11-12 | Uses `~/bin/imagegen` (OpenAI + Gemini image APIs); keys in `~/.config/imagegen.env`, stored age-encrypted (`dot_config/encrypted_private_imagegen.env.age`) |

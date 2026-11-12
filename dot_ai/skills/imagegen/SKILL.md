@@ -24,9 +24,10 @@ text and can't keep exact structure. So:
 ## Keys
 
 The script reads `OPENAI_API_KEY` and `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) from the environment, else from
-`~/.config/imagegen.env` (`KEY=VALUE` lines, mode 600). If both are missing, ask the user to create that file
-themselves; never ask them to paste keys into the chat, and never print, cat or echo the file. A backend without a key
-is skipped.
+`~/.config/imagegen.env` (`KEY=VALUE` lines, mode 600). The user's dotfiles deploy that file age-encrypted, so if it's
+missing, `chezmoi apply ~/.config/imagegen.env` usually restores it (chezmoi needs its age key on the machine). If
+that doesn't work, ask the user to create the file themselves. Never ask them to paste keys into the chat, and never
+print, cat or echo the file. A backend without a key is skipped.
 
 ## Choose providers and models first
 
