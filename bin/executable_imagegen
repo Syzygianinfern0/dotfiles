@@ -10,7 +10,7 @@
   imagegen figures.yaml --backend gemini --dry-run
   imagegen -p "a red fox in the snow" --id fox   # one-off prompt, no YAML
   imagegen -p "make it night time" --ref fox.png --id fox_night
-  imagegen --list-models                         # image models your keys can use
+  imagegen --list-models [--json]                # image models your keys can use, newest first
   imagegen --sheet-only OUT_DIR                  # rebuild the contact sheet
 
 Keys: OPENAI_API_KEY and GEMINI_API_KEY (or GOOGLE_API_KEY) from the environment, else from
@@ -39,6 +39,7 @@ import base64
 import io
 import json
 import os
+import re
 import stat
 import sys
 import time
@@ -56,14 +57,12 @@ DEFAULT_MODELS = {
 # OpenAI image models take a fixed set of sizes; pick the closest one to the requested aspect.
 OPENAI_SIZES = {"1:1": "1024x1024", "3:2": "1536x1024", "16:9": "1536x1024", "4:3": "1536x1024",
                 "2:3": "1024x1536", "9:16": "1024x1536", "3:4": "1024x1536"}
-# Estimated USD per million tokens: (text input, image input, output). From public price pages
-# (late 2026); check the provider's billing page for real charges. Unknown models get no estimate,
-# but their token counts are still logged.
-PRICES = {
-    "gpt-image-2": (5.0, 8.0, 30.0),
-    "gemini-3-pro-image": (2.0, 2.0, 120.0),
-    "gemini-2.5-flash-image": (0.3, 0.3, 30.0),
-}
+# Prices come from LiteLLM's public model price catalog (the same one Harbor uses), cached for a day.
+# They are estimates from list prices; the provider's billing page has the real charges.
+# Not covered: OpenAI's data-residency uplift and Gemini's flex/priority tiers.
+PRICE_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+PRICE_CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "imagegen" / "litellm-prices.json"
+_catalog = None
 KEY_VARS = {"openai": ["OPENAI_API_KEY"], "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"]}
 
 
@@ -89,6 +88,100 @@ def have_key(backend):
     return any(os.environ.get(v) for v in KEY_VARS[backend])
 
 
+# ── prices ──────────────────────────────────────────────────────────────────────
+
+def price_catalog():
+    """LiteLLM's price catalog, refreshed at most daily. Falls back to a stale copy, then to {}."""
+    global _catalog
+    if _catalog is not None:
+        return _catalog
+    fresh = PRICE_CACHE.exists() and time.time() - PRICE_CACHE.stat().st_mtime < 86400
+    if not fresh:
+        try:
+            import urllib.request
+            with urllib.request.urlopen(PRICE_URL, timeout=15) as r:
+                data = r.read()
+            json.loads(data)  # only cache valid JSON
+            PRICE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = PRICE_CACHE.with_suffix(".tmp")
+            tmp.write_bytes(data)
+            tmp.replace(PRICE_CACHE)
+        except Exception as e:
+            print(f"warning: couldn't refresh prices ({type(e).__name__}); "
+                  + ("using the cached copy" if PRICE_CACHE.exists() else "costs will be unknown"), file=sys.stderr)
+    try:
+        _catalog = json.loads(PRICE_CACHE.read_text())
+    except Exception:
+        _catalog = {}
+    return _catalog
+
+
+def price_date():
+    return time.strftime("%Y-%m-%d", time.localtime(PRICE_CACHE.stat().st_mtime)) if PRICE_CACHE.exists() else None
+
+
+def model_prices(backend, model):
+    """The catalog entry for a model: Gemini API rates first (not Vertex), then the bare id."""
+    cat = price_catalog()
+    base = model.removesuffix("-preview")
+    keys = ([f"gemini/{model}", f"gemini/{base}", f"gemini/{base}-preview"] if backend == "gemini" else []) \
+        + [model, base]
+    for k in keys:
+        e = cat.get(k)
+        if e and any("cost" in f for f in e):
+            return e
+    return None
+
+
+def estimate_cost(backend, model, usage):
+    """USD estimate from token usage: text and image tokens in, text (incl. thinking) and image tokens out."""
+    e = model_prices(backend, model)
+    if not e or not usage:
+        return None
+    text_in = e.get("input_cost_per_token", 0)
+    text_out = e.get("output_cost_per_reasoning_token", e.get("output_cost_per_token", 0))
+    img_out = e.get("output_cost_per_image_token")
+    cost = (usage.get("text_in", 0) * text_in
+            + usage.get("image_in", 0) * e.get("input_cost_per_image_token", text_in)
+            + usage.get("text_out", 0) * text_out)
+    if img_out is not None:
+        cost += usage.get("image_out", 0) * img_out
+    elif e.get("output_cost_per_image") is not None:
+        cost += e["output_cost_per_image"]  # rough: one resolution's flat price
+    else:
+        return None
+    return round(cost, 4)
+
+
+def cost_basis(backend, model):
+    e = model_prices(backend, model) or {}
+    return "tokens" if e.get("output_cost_per_image_token") is not None else \
+        "per-image (rough)" if e.get("output_cost_per_image") is not None else None
+
+
+GEMINI_1K_IMAGE_TOKENS = 1120  # output tokens for one ~1K Gemini image (Google's pricing page)
+
+
+def per_image_hint(backend, model):
+    """Short price label for model listings. Built from the token rate where there is one: the catalog's
+    per-image field holds a single resolution's price (e.g. 0.5K for one Gemini entry, 1K for another)."""
+    e = model_prices(backend, model)
+    if not e:
+        return None
+    rate = e.get("output_cost_per_image_token")
+    if rate is not None and backend == "gemini":
+        return f"~${rate * GEMINI_1K_IMAGE_TOKENS:.3f}/1K image (+thinking)"
+    if rate is not None:
+        return f"${rate * 1e6:g}/M image tokens out"
+    if e.get("output_cost_per_image") is not None:
+        return f"~${e['output_cost_per_image']:.3f}/image (rough)"
+    return None
+
+
+def tokens(details, modality):
+    return sum(d.token_count or 0 for d in (details or []) if modality in str(d.modality))
+
+
 # ── backends ────────────────────────────────────────────────────────────────────
 
 def gen_openai(prompt, aspect, refs, model):
@@ -107,10 +200,11 @@ def gen_openai(prompt, aspect, refs, model):
     u = getattr(res, "usage", None)
     usage = None
     if u is not None:
-        det = getattr(u, "input_tokens_details", None)
-        usage = dict(text_in=getattr(det, "text_tokens", None) if det else u.input_tokens,
-                     image_in=getattr(det, "image_tokens", 0) if det else 0,
-                     out=u.output_tokens)
+        di, do = getattr(u, "input_tokens_details", None), getattr(u, "output_tokens_details", None)
+        image_in = getattr(di, "image_tokens", 0) or 0
+        text_out = getattr(do, "text_tokens", 0) or 0
+        usage = dict(text_in=(u.input_tokens or 0) - image_in, image_in=image_in,
+                     text_out=text_out, image_out=(u.output_tokens or 0) - text_out)
     return Image.open(io.BytesIO(base64.b64decode(res.data[0].b64_json))), model, usage
 
 
@@ -137,10 +231,11 @@ def gen_gemini(prompt, aspect, refs, model):
                     u = res.usage_metadata
                     usage = None
                     if u is not None:
-                        image_in = sum(d.token_count or 0 for d in (u.prompt_tokens_details or [])
-                                       if "IMAGE" in str(d.modality))
+                        image_in = tokens(u.prompt_tokens_details, "IMAGE")
+                        out = u.candidates_token_count or 0
+                        image_out = tokens(u.candidates_tokens_details, "IMAGE") if u.candidates_tokens_details else out
                         usage = dict(text_in=(u.prompt_token_count or 0) - image_in, image_in=image_in,
-                                     out=(u.candidates_token_count or 0) + (u.thoughts_token_count or 0))
+                                     text_out=out - image_out + (u.thoughts_token_count or 0), image_out=image_out)
                     return Image.open(io.BytesIO(part.inline_data.data)), m, usage
         reason = res.candidates[0].finish_reason if res.candidates else res.prompt_feedback
         raise RuntimeError(f"no image in response ({reason})")
@@ -150,27 +245,77 @@ def gen_gemini(prompt, aspect, refs, model):
 BACKENDS = {"openai": gen_openai, "gemini": gen_gemini}
 
 
-def list_models():
+def available_models():
+    """Image models each provider's key can use, newest first: {backend: [ {id, name, date, ...} ]}.
+
+    Dated snapshots (gpt-image-2-2026-04-21) are folded into their alias when the alias exists.
+    A backend without a key maps to None.
+    """
+    out = {"openai": None, "gemini": None}
     if have_key("openai"):
         from openai import OpenAI
-        ids = sorted(m.id for m in OpenAI().models.list() if "image" in m.id or "dall-e" in m.id)
-        print("openai:", *ids, sep="\n  ")
-    else:
-        print("openai: no key (OPENAI_API_KEY)")
+        ms = [m for m in OpenAI().models.list() if "image" in m.id or "dall-e" in m.id]
+        ids = {m.id for m in ms}
+        rows = []
+        for m in ms:
+            base = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", m.id)
+            if base != m.id and base in ids:
+                continue
+            rows.append(dict(id=m.id, name=m.id, created=m.created,
+                             date=time.strftime("%Y-%m-%d", time.gmtime(m.created)),
+                             note="moving alias (ChatGPT's current model)" if "latest" in m.id else ""))
+        out["openai"] = sorted(rows, key=lambda r: -r["created"])
     if have_key("gemini"):
         from google import genai
         client = genai.Client()  # keep a reference: the pager needs it open while iterating
-        ids = sorted(m.name.removeprefix("models/") for m in client.models.list() if "image" in m.name)
-        print("gemini:", *ids, sep="\n  ")
+        rows = []
+        for m in client.models.list():
+            mid = m.name.removeprefix("models/")
+            label = f"{mid} {m.display_name or ''}".lower()
+            if not any(s in label for s in ("image", "banana")) or "imagen" in label \
+                    or "generateContent" not in (m.supported_actions or []):
+                continue  # Imagen models use a different API than this script's backend
+            rows.append(dict(id=mid, name=m.display_name or mid, rank=gemini_rank(mid, m.display_name or ""),
+                             note=m.description or ""))
+        out["gemini"] = [{k: v for k, v in r.items() if k != "rank"}
+                         for r in sorted(rows, key=lambda r: r["rank"], reverse=True)]
+    for rows in out.values():
+        for r in rows or []:
+            r["default"] = r["id"] in DEFAULT_MODELS.values()
+    for backend, rows in out.items():
+        for r in rows or []:
+            r["price"] = per_image_hint(backend, r["id"])
+    return out
+
+
+def gemini_rank(mid, display):
+    """Gemini's API gives no release dates, so order by the "Nano Banana" generation in the display name
+    (Nano Banana < Pro < 2 < 2.1 ...), then tier (pro > flash > lite)."""
+    m = re.match(r"nano banana(?: (pro))?(?: (\d+(?:\.\d+)?))?", display.lower())
+    if m:
+        gen = float(m.group(2)) if m.group(2) else 1.5 if m.group(1) else 1.0
     else:
-        print("gemini: no key (GEMINI_API_KEY)")
+        v = re.search(r"(\d+(?:\.\d+)?)", mid)
+        gen = float(v.group(1)) - 1.5 if v else 0  # rough map of gemini-X onto the banana numbering
+    tier = 2 if "pro" in f"{mid} {display}".lower() else 0 if "lite" in mid else 1
+    return gen, tier
 
 
-def estimate_cost(model, usage):
-    price = PRICES.get(model.removesuffix("-preview"))
-    if not price or not usage:
-        return None
-    return round(sum((usage.get(k) or 0) * p for k, p in zip(("text_in", "image_in", "out"), price)) / 1e6, 4)
+def list_models(as_json=False):
+    models = available_models()
+    if as_json:
+        return print(json.dumps(dict(models, price_snapshot=price_date()), indent=1))
+    for backend, rows in models.items():
+        if rows is None:
+            print(f"{backend}: no key ({KEY_VARS[backend][0]})")
+            continue
+        print(f"{backend} (newest first):")
+        for r in rows:
+            bits = [r.get("date", ""), "" if r["name"] == r["id"] else r["name"],
+                    r["price"] or "price unknown",
+                    "default" if r["default"] else "", r["note"][:50]]
+            print(f"  {r['id']:28s} " + "  ".join(b for b in bits if b))
+    print(f"prices: LiteLLM catalog, fetched {price_date() or 'never'}")
 
 
 # ── jobs ────────────────────────────────────────────────────────────────────────
@@ -210,7 +355,8 @@ def run_job(job, out, models, retries=2):
             path.parent.mkdir(parents=True, exist_ok=True)
             img.save(path)
             return dict(job, file=str(path), model=model, status="ok", seconds=round(time.time() - t, 1),
-                        usage=usage, est_cost_usd=estimate_cost(model, usage))
+                        usage=usage, est_cost_usd=estimate_cost(job["backend"], model, usage),
+                        cost_basis=cost_basis(job["backend"], model), price_snapshot=price_date())
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
             permanent = ("safety", "moderation", "policy", "permission", "does not exist", "not found",
@@ -297,13 +443,14 @@ def main():
     ap.add_argument("--gemini-model", default=DEFAULT_MODELS["gemini"])
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--dry-run", action="store_true", help="list the jobs, make no API calls")
-    ap.add_argument("--list-models", action="store_true")
+    ap.add_argument("--list-models", action="store_true", help="image models your keys can use, newest first")
+    ap.add_argument("--json", action="store_true", help="with --list-models: machine-readable output")
     ap.add_argument("--sheet-only", type=Path, metavar="OUT_DIR")
     a = ap.parse_args()
 
     load_key_file()
     if a.list_models:
-        return list_models()
+        return list_models(a.json)
     if a.sheet_only:
         return print(contact_sheet(a.sheet_only))
     if bool(a.prompts) == bool(a.prompt):
@@ -340,6 +487,7 @@ def main():
     records = {(r["id"], r["backend"], r["k"]): r for r in
                (json.loads(manifest_path.read_text()) if manifest_path.exists() else [])}
     print(f"{len(jobs)} images -> {out}", flush=True)
+    price_catalog()  # load once before the worker threads use it
     new = []
     with ThreadPoolExecutor(a.workers) as ex:
         for r in ex.map(lambda j: run_job(j, out, models), jobs):
