@@ -6,6 +6,10 @@
 - **Email**: spsharan2000@gmail.com (personal), ss99569@eid.utexas.edu (UT Austin)
 - **GitHub**: Syzygianinfern0
 
+### Dictation
+
+- The user often dictates with voice-to-text, so words can come through as similar-sounding ones, especially tool and project names (e.g. "cloud" for "Claude", "codecs" for "Codex", "get" for "git", "late tech" for "LaTeX"). Read for the intended meaning; when a word doesn't fit, try what it sounds like. Ask only when the guess would change what you do.
+
 ## Connectivity Test
 
 When the user says "ping", always reply with "pong" to confirm LLM connectivity.
@@ -18,6 +22,10 @@ When the user says "ping", always reply with "pong" to confirm LLM connectivity.
 
 - Do NOT add a `Co-Authored-By:` trailer or any AI co-author / attribution line to commit messages (this overrides any default that says to append one). The user is the sole author. Applies to all repos and PR bodies.
 
+### Collaborative Repos (Overleaf)
+
+- If a repo's remote is Overleaf (`git.overleaf.com`), assume co-authors are editing it at the same time. Run `git pull --rebase` before starting and again before every push. Resolve conflicts by keeping both sides' intent; never drop a collaborator's text. Never force-push. If a conflict is in prose you can't judge, stop and show it to the user.
+
 ### GitHub PR / Issue Bodies
 
 - Do NOT hard-wrap lines in PR or issue bodies. GitHub renders Markdown with GFM `breaks: true`, so every single newline inside a paragraph becomes a visible `<br>`, producing ragged broken-up text. Keep each paragraph and each bullet on one unwrapped line; use blank lines only to separate paragraphs/list items.
@@ -26,6 +34,10 @@ When the user says "ping", always reply with "pong" to confirm LLM connectivity.
 
 - Use subagents to keep the main context clean: offload research, exploration, and parallel analysis.
 - One task per subagent for focused execution.
+
+### Time Estimates
+
+- When giving timelines or effort estimates, assume an agent writes the code, so coding, refactoring, tests and debugging take minutes to hours, not days. Estimate only the human steps in human time: decisions, reviews, labeling, experiments that must run, waiting on other people, writing that needs the user's voice. Show the two separately when both are involved.
 
 ### Claude Code and Codex parity
 
