@@ -26,11 +26,15 @@ cover". Narrowing usually enters there, not in the headline.
   options only if the user has real alternatives.
 - Project plans, roadmaps and next steps are evidence, not the frame. Do not let a planned next step define success.
 - For a question about something the user built or plans, the packet states what it is for: the user's words, then
-  goals documented in design docs, then your inferences, each labelled with its source (the roadmap's ordering is not a
+  goals documented in design docs, then inferences they confirmed, each labelled with its source (the roadmap's ordering is not a
   priority). Coverage must include what exists today, what it is meant to do, and what closing the gap would take.
 - Operational detail goes in only where it changes the answer, with that connection stated.
 - Test before sending: could a panelist satisfy every coverage item and still not answer the user's question? If yes,
   rewrite.
+
+**Only what the user gave for this question.** Nothing else about them goes in: not memory, instructions files,
+earlier panels, or what they said earlier in the chat about something else (a worry about one product is not a
+requirement for the next). If you think such a detail matters, ask yes/no before round 1; include only what they confirm.
 
 **Check the framing before round 1** when the packet will contain a decision, options, a concrete case or coverage
 items the user did not state. Show in one line, in the user's terms, what you will ask and the top two things the
@@ -68,7 +72,7 @@ Write `round1.md`, the frozen packet every seat receives unchanged (the dispatch
 - facts you have verified, with how; file pointers to read
 - what a good answer must cover
 - **not**: your own leaning, other models' answers, the panel's composition (no model names, families or seat count;
-  "other independent analyses exist" is enough), earlier conversation beyond what the question needs
+  "other independent analyses exist" is enough), earlier conversation beyond what the question needs, details about the user they did not give for this question
 
 Require this answer shape, at most about 700 words:
 
