@@ -1,0 +1,30 @@
+% Weekly report template. Copy into <reports-repo>/<YYYY-MM-DD>/report.tex and fill the CAPS fields.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\pagestyle{empty}
+
+\begin{document}
+
+\noindent{\large\textbf{Weekly Report}} \hfill AUTHOR \\
+\noindent Week of MONTH DAY, YEAR \hfill \textit{PROJECT: QUESTION OF THE WEEK?}
+
+\vspace{0.6em}\hrule\vspace{0.9em}
+
+% Paragraph 1: background. What the project is, the question, what we did.
+\noindent PARAGRAPH ONE.
+
+\vspace{0.5em}
+% Paragraph 2: what we found (cite Figure~\ref{fig:main}) and the next step.
+\noindent PARAGRAPH TWO.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figure.pdf}
+  \caption{WHAT THE COLORS AND GROUPS ARE, IN PLAIN WORDS.}
+  \label{fig:main}
+\end{figure}
+
+\end{document}

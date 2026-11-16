@@ -1,0 +1,4 @@
+interface:
+  display_name: "Weekly Report"
+  short_description: "One-page LaTeX weekly report for the advisor, from one or more projects"
+  default_prompt: "Use $weekly-report to write last week's report."
