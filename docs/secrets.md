@@ -7,6 +7,8 @@ Private files are encrypted with [age](https://age-encryption.org), using chezmo
 
 To add another encrypted file: `chezmoi add --encrypt <file>`.
 
+Not stored at all: `~/.config/rclone/rclone.conf`, which holds cloud-drive login tokens. The bootstrap installs `rclone`; run `rclone config` once on each machine that needs a remote.
+
 ## Keeping the public repo clean
 
 This repo is public. GitHub secret scanning with push protection is on, so pushes containing known token formats are blocked. For a local check before committing, opt in to the gitleaks hook in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) with `pre-commit install`.

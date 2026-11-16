@@ -13,8 +13,8 @@
 #                     Set GITHUB_TOKEN to avoid GitHub API rate limits.
 
 # TOOLS = command names (presence check); BREW_PKGS = formula names.
-TOOLS="starship zoxide fzf eza bat duf dust btop git-lfs rg fd delta gh jq"
-BREW_PKGS="starship zoxide fzf eza bat duf dust btop git-lfs ripgrep fd git-delta gh jq"
+TOOLS="starship zoxide fzf eza bat duf dust btop git-lfs rg fd delta gh jq rclone"
+BREW_PKGS="starship zoxide fzf eza bat duf dust btop git-lfs ripgrep fd git-delta gh jq rclone"
 BIN="$HOME/.local/bin"
 PLUG="$HOME/.local/share/zsh/plugins"
 export PATH="$BIN:$PATH"
@@ -131,6 +131,23 @@ install_release() {
   verify_bin "$name"
 }
 
+# install_zip <name> <owner/repo> <regex>...: for releases that ship a .zip
+# (e.g. rclone). Uses unzip, or Python's zipfile when unzip is missing.
+install_zip() {
+  local name="$1" repo="$2" url f d; shift 2; d="$TMP/$name"
+  url="$(gh_asset "$repo" "$@")"
+  [ -n "$url" ] || { warn "$name: no release asset found (rate-limited? set GITHUB_TOKEN)"; return 1; }
+  mkdir -p "$d"; f="$d/${url##*/}"
+  curl -fsSL -o "$f" "$url" || { warn "$name: download failed"; return 1; }
+  if have unzip; then unzip -q "$f" -d "$d"
+  elif have python3; then python3 -m zipfile -e "$f" "$d"
+  else warn "$name: needs unzip or python3 to extract"; return 1; fi || { warn "$name: extract failed"; return 1; }
+  local c; shopt -s globstar nullglob
+  for c in "$d"/**/"$name"; do [ -f "$c" ] && { install -m 755 "$c" "$BIN/$name"; break; }; done
+  [ -x "$BIN/$name" ] || { warn "$name: binary not found in ${url##*/}"; return 1; }
+  verify_bin "$name"
+}
+
 # install_raw <name> <owner/repo> <regex>...: for releases that ship a bare
 # binary instead of a tarball (e.g. jq).
 install_raw() {
@@ -166,6 +183,7 @@ if [ -n "$ARCH" ]; then
   have jq      || install_raw jq jqlang/jq "jq-linux-${GOARCH}$"
   have btop    || install_release btop aristocratos/btop "btop-${ARCH}-(unknown-)?linux-musl\.(tar\.gz|tbz)$"
   have git-lfs || install_release git-lfs git-lfs/git-lfs "git-lfs-linux-${GOARCH}-v.*\.tar\.gz$"
+  have rclone  || install_zip rclone rclone/rclone "rclone-v.*-linux-${GOARCH}\.zip$"
 fi
 
 # latest_tag <owner/repo> -> tag of the latest GitHub release (empty if none).
