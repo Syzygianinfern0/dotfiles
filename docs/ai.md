@@ -11,7 +11,7 @@ The repo sets up two agents, [Claude Code](https://claude.com/claude-code) and [
 
 ~/.claude/                     Claude Code
 ├── CLAUDE.md  → ../.ai/instructions.md
-└── settings.json              ← private_dot_claude/settings.json.tmpl   (fully owned)
+└── settings.json              ← private_dot_claude/modify_private_settings.json   (fully owned)
 
 ~/.codex/                      Codex
 ├── AGENTS.md  → ../.ai/instructions.md
@@ -48,11 +48,13 @@ The two config files are handled differently on purpose:
 
 | | Claude `~/.claude/settings.json` | Codex `~/.codex/config.toml` |
 | --- | --- | --- |
-| Managed by | full template | modify script that sets a few keys |
+| Managed by | modify template that writes the whole file | modify script that sets a few keys |
 | Changes made in the app (`/config`, settings UI) | **reverted** on the next `chezmoi apply`; make them in the template | kept, unless they touch an enforced key |
 | Why | the file holds only preferences | Codex also writes trust entries and app state there, including project paths that must not end up in this public repo |
 
 Enforced for **Claude**: model and effort (per model), theme, `cleanupPeriodDays: 365` (keep transcripts a year), `idleCompaction: false`, skip the bypass-mode confirmation, and the status line below.
+
+One exception, on the machine named `mac` only: if OpenAIDR has added its hooks to the file (commands containing `openaidr-hook-v1`), those hook entries and the `env` block it adds (telemetry to a local collector) are copied over as they are, so `chezmoi apply` doesn't remove them. Nothing of them is stored in the repo. Codex has no counterpart in the repo: OpenAIDR puts its Codex hooks in `~/.codex/hooks.json`, which isn't managed, and `config.toml` keeps whatever Codex writes anyway.
 
 Enforced for **Codex**: model and reasoning effort, multi-agent and memories features, the built-in status line items, and the OpenAI developer-docs MCP server.
 

@@ -1,0 +1,68 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /* Every key here is enforced; the current file (stdin) is only read for the
+       OpenAIDR exception below. */ -}}
+{{- /* ccstatusline is a node script; on Linux node lives under ~/.local/opt (not on the hook PATH), so prefix it. */ -}}
+{{- $ccs := "" -}}
+{{- if eq .chezmoi.os "darwin" -}}
+{{-   if lookPath "ccstatusline" }}{{ $ccs = "ccstatusline" }}{{ end -}}
+{{- else -}}
+{{-   $bins := glob (joinPath .chezmoi.homeDir ".local/opt/node-*/bin/ccstatusline") -}}
+{{-   if $bins }}{{ $ccs = printf "PATH=%s:$PATH ccstatusline" (dir (last $bins)) }}{{ end -}}
+{{- end -}}
+{{- /* OpenAIDR (Mac only): its installer adds hooks and an "env" block (telemetry to a
+       local collector) to this file. On the machine named "mac" those are copied
+       verbatim from the current file, so applying doesn't strip them; nothing about
+       them is stored in the repo. Everywhere else they are dropped like any other drift. */ -}}
+{{- $in := .chezmoi.stdin | default "" -}}
+{{- $aidr := and (eq (.machine | default "") "mac") (contains "openaidr-hook-v1" $in) -}}
+{{- $env := "" -}}
+{{- if $aidr }}{{ $env = regexFind `(?s)\n  "env": \{\n.*?\n  \},` $in }}{{ end -}}
+{{- $events := list "PreToolUse" "UserPromptSubmit" "PostToolUse" "PostToolUseFailure" "SessionStart" "SessionEnd" "Stop" -}}
+{{- $hooks := list -}}
+{{- range $ev := $events -}}
+{{-   $entries := list -}}
+{{-   if and $ccs (eq $ev "PreToolUse") -}}
+{{-     $entries = append $entries (printf "      {\n        \"matcher\": \"Skill\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": %s\n          }\n        ]\n      }" (printf "%s --hook" $ccs | toJson)) -}}
+{{-   end -}}
+{{-   if and $ccs (eq $ev "UserPromptSubmit") -}}
+{{-     $entries = append $entries (printf "      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": %s\n          }\n        ]\n      }" (printf "%s --hook" $ccs | toJson)) -}}
+{{-   end -}}
+{{-   if $aidr -}}
+{{-     $m := regexFind (printf `"command": "[^\n]*openaidr-hook-v1 [^\n]* claude %s '[^\n]*",\s*"timeout": \d+` $ev) $in -}}
+{{-     if $m -}}
+{{-       $m = regexReplaceAll `",\s*"timeout"` $m "\",\n            \"timeout\"" -}}
+{{-       $entries = append $entries (printf "      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            %s\n          }\n        ]\n      }" $m) -}}
+{{-     end -}}
+{{-   end -}}
+{{-   if $entries }}{{ $hooks = append $hooks (printf "    %s: [\n%s\n    ]" (toJson $ev) (join ",\n" $entries)) }}{{ end -}}
+{{- end -}}
+{
+  "cleanupPeriodDays": 365,{{ $env }}
+  "model": "opus",
+{{- if $hooks }}
+  "hooks": {
+{{ join ",\n" $hooks }}
+  },
+{{- end }}
+{{- if $ccs }}
+  "statusLine": {
+    "type": "command",
+    "command": {{ $ccs | toJson }},
+    "padding": 0,
+    "refreshInterval": 10
+  },
+{{- end }}
+  "effortLevel": "high",
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "high"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "medium"
+    }
+  },
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "idleCompaction": false
+}
