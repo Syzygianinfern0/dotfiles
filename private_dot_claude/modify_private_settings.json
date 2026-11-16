@@ -17,6 +17,16 @@
 {{- $aidr := and (eq (.machine | default "") "mac") (contains "openaidr-hook-v1" $in) -}}
 {{- $env := "" -}}
 {{- if $aidr }}{{ $env = regexFind `(?s)\n  "env": \{\n.*?\n  \},` $in }}{{ end -}}
+{{- /* Our own env vars, enforced on every machine. Session-wide WebSearch cap (default 200,
+       shared with subagents). Listed first, ahead of the carried-over OpenAIDR entries. Our
+       line is dropped from the carried block first so it isn't duplicated on the next apply. */ -}}
+{{- $ourEnv := `    "CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION": "2000"` -}}
+{{- if $env -}}
+{{-   $env = regexReplaceAll `\n    "CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION": "[^"\n]*",?` $env "" -}}
+{{-   $env = replace "\"env\": {\n" (printf "\"env\": {\n%s,\n" $ourEnv) $env -}}
+{{- else -}}
+{{-   $env = printf "\n  \"env\": {\n%s\n  }," $ourEnv -}}
+{{- end -}}
 {{- $events := list "PreToolUse" "UserPromptSubmit" "PostToolUse" "PostToolUseFailure" "SessionStart" "SessionEnd" "Stop" -}}
 {{- $hooks := list -}}
 {{- range $ev := $events -}}

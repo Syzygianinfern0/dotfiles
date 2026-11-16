@@ -52,9 +52,9 @@ The two config files are handled differently on purpose:
 | Changes made in the app (`/config`, settings UI) | **reverted** on the next `chezmoi apply`; make them in the template | kept, unless they touch an enforced key |
 | Why | the file holds only preferences | Codex also writes trust entries and app state there, including project paths that must not end up in this public repo |
 
-Enforced for **Claude**: model and effort (per model), theme, `cleanupPeriodDays: 365` (keep transcripts a year), `idleCompaction: false`, skip the bypass-mode confirmation, and the status line below.
+Enforced for **Claude**: model and effort (per model), theme, `cleanupPeriodDays: 365` (keep transcripts a year), `idleCompaction: false`, skip the bypass-mode confirmation, and the status line below. Its `env` block sets `CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION` to 2000 (Claude Code's default is 200 WebSearch calls per session, shared with subagents). Codex has no counterpart: it has no per-session web search cap to raise.
 
-One exception, on the machine named `mac` only: if OpenAIDR has added its hooks to the file (commands containing `openaidr-hook-v1`), those hook entries and the `env` block it adds (telemetry to a local collector) are copied over as they are, so `chezmoi apply` doesn't remove them. Nothing of them is stored in the repo. Codex has no counterpart in the repo: OpenAIDR puts its Codex hooks in `~/.codex/hooks.json`, which isn't managed, and `config.toml` keeps whatever Codex writes anyway.
+One exception, on the machine named `mac` only: if OpenAIDR has added its hooks to the file (commands containing `openaidr-hook-v1`), those hook entries and the `env` block it adds (telemetry to a local collector) are copied over as they are (with the enforced env vars above merged in first), so `chezmoi apply` doesn't remove them. Nothing of them is stored in the repo. Codex has no counterpart in the repo: OpenAIDR puts its Codex hooks in `~/.codex/hooks.json`, which isn't managed, and `config.toml` keeps whatever Codex writes anyway.
 
 Enforced for **Codex**: model and reasoning effort, multi-agent and memories features, the built-in status line items, and the OpenAI developer-docs MCP server.
 
