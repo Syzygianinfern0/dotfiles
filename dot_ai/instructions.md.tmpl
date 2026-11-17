@@ -37,7 +37,7 @@ When the user says "ping", always reply with "pong" to confirm LLM connectivity.
 ### Browser Tab Groups
 
 - When driving the user's Chrome through the browser extension, the session's tab group lasts only as long as a tab the agent itself opened is in it. Closing the last of those removes the whole group, even with tabs the user added still inside, and the agent loses access to them. While the agent needs a tab the user added, keep at least one of the agent's own tabs open; close it only after finishing with the user's tabs. This overrides the tool's reminder to close tabs as soon as they're no longer needed.
-- The agent sees only tabs inside its own group. When a step needs the user on a page (signing in, a code, a CAPTCHA), or the user already has the right page open, ask them to drag that tab into the group, rather than opening a fresh copy the user would have to redo work in. After they do, re-read the group's tab list before acting.
+- The agent sees only tabs inside its own group. When a step needs the user on a page (signing in, a code, a CAPTCHA), or the user already has the right page open, first create the group if none exists (the user can't drag a tab into a group that doesn't exist yet), then ask them to drag that tab into it, rather than opening a fresh copy the user would have to redo work in. After they do, re-read the group's tab list before acting.
 - Applies only to agents with Chrome-extension tools (Claude in Chrome); Codex has no counterpart.
 
 ### Subagents
