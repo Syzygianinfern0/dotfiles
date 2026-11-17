@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blocked Page Reader"
+  short_description: "Read web pages that block the agent's normal fetch (403, bot checks)"
+  default_prompt: "Use $webread to read this page."

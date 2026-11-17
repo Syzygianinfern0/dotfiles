@@ -20,6 +20,7 @@ The repo sets up two agents, [Claude Code](https://claude.com/claude-code) and [
 ~/bin/chat2md                  ← bin/executable_chat2md   (read past sessions of either agent)
 ~/bin/panel-ask                ← bin/executable_panel-ask (run a cross-family model panel)
 ~/bin/imagegen                 ← bin/executable_imagegen  (batch image generation, OpenAI + Gemini)
+~/bin/webread                  ← bin/executable_webread   (read pages that block bots; HTTP → Camoufox → Wayback)
 ```
 
 `~/.claude` and `~/.codex` are created with mode 700.
@@ -121,3 +122,14 @@ Current exceptions, because only one agent has the feature: the `draft-goal-cond
 ## Rolling out a change
 
 After pushing to `main`, run `chezmoi update` and `chezmoi verify --exclude scripts` on every machine, as with any other change (see [`AGENTS.md`](../AGENTS.md)).
+
+## Reading blocked web pages
+
+The shared instructions tell both agents that when a page fetch is blocked (403, "Access Denied", a challenge page) they should run `~/bin/webread <url>` before giving up; the `webread` skill has the full chain. `webread` is a `uv` script that tries a browser-like HTTP request with Chrome's TLS fingerprint (`curl_cffi`), then headless Camoufox (an anti-detect Firefox, downloaded on first use to its own cache), then the newest Wayback Machine copy (labelled with its capture date). It judges blocks from the page content, prints clean Markdown via trafilatura with any JSON-LD first, and remembers per site which step worked (`~/.cache/webread/sites.json`). Exit code 2 means blocked at every step; on the Mac the agent may then use the user's own browser after telling them, on the servers it looks for another source. The choice of tools came from a Nov 2026 comparison of about 25 free stealth browsers and toolkits: integrated toolkits (Scrapling, Crawl4AI, stealth MCP servers) added no coverage over this chain. It never touches the user's browser profile, solves CAPTCHAs or uses proxies.
+
+```
+webread <url>                 # Markdown on stdout, status on stderr
+webread <url> --json          # method, status, final_url, structured data, markdown
+webread <url> --no-archive    # live page or nothing
+```
+

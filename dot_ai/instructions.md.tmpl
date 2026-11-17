@@ -30,6 +30,10 @@ When the user says "ping", always reply with "pong" to confirm LLM connectivity.
 
 - Do NOT hard-wrap lines in PR or issue bodies. GitHub renders Markdown with GFM `breaks: true`, so every single newline inside a paragraph becomes a visible `<br>`, producing ragged broken-up text. Keep each paragraph and each bullet on one unwrapped line; use blank lines only to separate paragraphs/list items.
 
+### Blocked Web Pages
+
+- If a page fetch fails or comes back as a bot wall (403/429, "Access Denied", "Just a moment...", a CAPTCHA page, an almost empty page), don't give up on the page or settle for search snippets: run `webread <url>` (the `webread` skill has the details). If that reports blocked at every step, use the user's own browser only on the Mac and after telling them, or find another source.
+
 ### Subagents
 
 - Use subagents to keep the main context clean: offload research, exploration, and parallel analysis.

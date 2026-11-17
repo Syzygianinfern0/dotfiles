@@ -1,0 +1,314 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["curl_cffi>=0.15", "trafilatura>=2.0", "camoufox[geoip]>=0.4.11"]
+# ///
+"""webread: read a web page that blocks ordinary fetchers, and print it as clean Markdown.
+
+  webread <url>                    # Markdown on stdout, a one-line status on stderr
+  webread <url> --json             # {"url", "final_url", "method", "status", "title", "markdown", "structured", ...}
+  webread <url> --raw              # the page HTML instead of Markdown
+  webread <url> --max-chars 20000  # cut the Markdown (default: no limit)
+  webread <url> --from browser     # skip the plain HTTP step (also: http, archive)
+  webread <url> --no-archive       # never fall back to a Wayback Machine copy
+
+It tries each step in turn and moves on only when the page looks blocked (judged on the content, not just the
+status code):
+  1. http     curl_cffi with Chrome's TLS fingerprint (~1 s). Gets most pages, including many behind Cloudflare,
+              PerimeterX and Akamai article pages.
+  2. browser  headless Camoufox, an anti-detect Firefox (~15 s cold start). Gets most JavaScript-checked pages,
+              e.g. Akamai product pages. The browser (~700 MB) downloads on first use.
+  3. archive  the newest Wayback Machine copy. Old: the output says when it was captured.
+The step that worked is remembered per site (~/.cache/webread/sites.json) and tried first next time.
+
+Exit codes: 0 page read; 2 blocked at every step (the agent's next move is the user's own browser, on a
+machine that has one, or another source); 1 other errors (bad URL, network down).
+
+Nothing here solves CAPTCHAs, uses proxies, or touches the user's own browser profile.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlparse
+
+CACHE = Path.home() / ".cache" / "webread" / "sites.json"
+STEPS = ["http", "browser", "archive"]
+HTTP_TIMEOUT = 25
+BROWSER_TIMEOUT_MS = 45_000
+BROWSER_SETTLE_S = 4
+
+# Text that only shows up on bot walls and challenge pages. Checked in the title, and in the body only when the
+# body is short, so a long real page that merely mentions "captcha" isn't flagged.
+BLOCK_MARKERS = [
+    "access denied", "access to this page has been denied", "just a moment", "attention required",
+    "verify you are human", "verifying you are human", "are you a robot", "robot or human",
+    "press & hold", "press and hold", "pardon our interruption", "request unsuccessful",
+    "enable javascript and cookies", "checking your browser", "captcha", "bot detection",
+    "unusual traffic", "you have been blocked", "request blocked", "403 forbidden", "error 1020",
+    "please verify you are a human", "security check",
+]
+BLOCK_STATUS = {401, 403, 405, 429, 503}
+
+
+def log(msg: str) -> None:
+    print(f"webread: {msg}", file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------- block detection and extraction
+
+def title_of(html: str) -> str:
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+
+
+def visible_text(html: str) -> str:
+    html = re.sub(r"(?is)<(script|style|noscript|template)[^>]*>.*?</\1>", " ", html)
+    return re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", html)).strip()
+
+
+def block_reason(status: int, html: str) -> str | None:
+    """Why this response looks like a bot wall, or None if it looks like the real page."""
+    title = title_of(html).lower()
+    text = visible_text(html)
+    head = text[:3000].lower()
+    for marker in BLOCK_MARKERS:
+        if marker in title:
+            return f"challenge page ({marker!r} in title)"
+    if len(text) < 3000:
+        for marker in BLOCK_MARKERS:
+            if marker in head:
+                return f"challenge page ({marker!r})"
+    if status in BLOCK_STATUS:
+        return f"HTTP {status}"
+    if status >= 400:
+        return f"HTTP {status}"
+    if len(text) < 200:
+        return f"almost empty page ({len(text)} chars of text)"
+    return None
+
+
+def structured_data(html: str) -> list[dict]:
+    """Useful bits of JSON-LD (Product, Article, Offer...) - often the cleanest source of prices and specs."""
+    out = []
+    keep = {"@type", "name", "headline", "description", "brand", "sku", "offers", "price", "priceCurrency",
+            "availability", "aggregateRating", "ratingValue", "reviewCount", "author", "datePublished",
+            "dateModified", "lowPrice", "highPrice", "hasVariant", "variesBy", "color", "size", "material"}
+
+    def trim(x, depth=0):
+        if depth > 6:
+            return None
+        if isinstance(x, dict):
+            d = {k: trim(v, depth + 1) for k, v in x.items() if k in keep}
+            return {k: v for k, v in d.items() if v not in (None, "", [], {})} or None
+        if isinstance(x, list):
+            items = [t for t in (trim(v, depth + 1) for v in x[:5]) if t]
+            return items or None
+        if isinstance(x, str):
+            return x[:500]
+        return x
+
+    for block in re.findall(r'(?is)<script[^>]+application/ld\+json[^>]*>(.*?)</script>', html):
+        try:
+            data = json.loads(block.strip())
+        except Exception:
+            continue
+        nodes = data.get("@graph", [data]) if isinstance(data, dict) else data if isinstance(data, list) else []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            kind = node.get("@type")
+            kinds = kind if isinstance(kind, list) else [kind]
+            if any(k in {"Product", "ProductGroup", "Article", "NewsArticle", "BlogPosting", "Recipe", "Event", "Book",
+                         "ScholarlyArticle", "SoftwareApplication", "Offer", "Review"} for k in kinds):
+                t = trim(node)
+                if t:
+                    out.append(t)
+    return out[:5]
+
+
+def to_markdown(html: str, url: str) -> str:
+    import trafilatura
+
+    md = trafilatura.extract(html, url=url, output_format="markdown", include_links=True, include_tables=True,
+                             include_images=False, with_metadata=True, favor_recall=True)
+    text = visible_text(html)
+    if not md or len(md) < 200:
+        return text  # trafilatura found no main content: plain text beats nothing
+    if len(md) < 3000 and len(text) > 4 * len(md):
+        # Product and listing pages: trafilatura often keeps one side section and drops the specs and prices.
+        return md.strip() + "\n\n## Full page text (unformatted)\n\n" + text
+    return md.strip()
+
+
+# ---------------------------------------------------------------- steps
+
+def step_http(url: str) -> tuple[int, str, str]:
+    from curl_cffi import requests
+
+    r = requests.get(url, impersonate="chrome", timeout=HTTP_TIMEOUT, allow_redirects=True)
+    return r.status_code, r.text, str(r.url)
+
+
+def step_browser(url: str) -> tuple[int, str, str]:
+    import subprocess
+
+    from camoufox.sync_api import Camoufox
+
+    try:
+        from camoufox.pkgman import installed_verstr  # raises if the browser isn't downloaded yet
+        installed_verstr()
+    except Exception:
+        log("downloading the Camoufox browser (first use only, a few hundred MB)...")
+        subprocess.run([sys.executable, "-m", "camoufox", "fetch"], check=True,
+                       stdout=sys.stderr, stderr=sys.stderr)
+
+    import warnings
+
+    warnings.filterwarnings("ignore")  # Camoufox's fingerprint notices are noise for a one-off page read
+    host_os = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")  # a fake OS is easier to spot
+    with Camoufox(headless=True, humanize=True, os=host_os) as browser:
+        page = browser.new_page()
+        resp = page.goto(url, timeout=BROWSER_TIMEOUT_MS, wait_until="domcontentloaded")
+        # Challenge scripts often swap in the real page a few seconds after load.
+        deadline = time.time() + 20
+        time.sleep(BROWSER_SETTLE_S)
+        while time.time() < deadline:
+            html = page.content()
+            if not block_reason(200, html):
+                break
+            time.sleep(3)
+        try:
+            page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+        html = page.content()
+        status = resp.status if resp else 0
+        # A challenge that resolved in place keeps the first response's 403; judge the final page by its content.
+        if status in BLOCK_STATUS and not block_reason(200, html):
+            status = 200
+        return status, html, page.url
+
+
+def step_archive(url: str) -> tuple[int, str, str]:
+    from curl_cffi import requests
+
+    r = requests.get("https://archive.org/wayback/available", params={"url": url}, timeout=HTTP_TIMEOUT)
+    snap = (r.json().get("archived_snapshots") or {}).get("closest") or {}
+    if not snap.get("available") or str(snap.get("status")) != "200":
+        return 404, "", url
+    ts = snap["timestamp"]
+    raw = f"https://web.archive.org/web/{ts}id_/{url}"  # id_ = the original page without the Wayback toolbar
+    r = requests.get(raw, impersonate="chrome", timeout=HTTP_TIMEOUT)
+    when = datetime.strptime(ts, "%Y%m%d%H%M%S").strftime("%Y-%m-%d")
+    return r.status_code, r.text, f"{raw}#captured={when}"
+
+
+RUNNERS = {"http": step_http, "browser": step_browser, "archive": step_archive}
+
+
+# ---------------------------------------------------------------- per-site memory
+
+def load_cache() -> dict:
+    try:
+        return json.loads(CACHE.read_text())
+    except Exception:
+        return {}
+
+
+def remember(host: str, method: str) -> None:
+    cache = load_cache()
+    cache[host] = {"method": method, "when": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    try:
+        CACHE.parent.mkdir(parents=True, exist_ok=True)
+        CACHE.write_text(json.dumps(cache, indent=1, sort_keys=True))
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------- main
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="webread", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("url")
+    ap.add_argument("--json", action="store_true", help="print a JSON object instead of Markdown")
+    ap.add_argument("--raw", action="store_true", help="print the page HTML instead of Markdown")
+    ap.add_argument("--max-chars", type=int, default=0, help="cut the Markdown to this many characters")
+    ap.add_argument("--from", dest="start", choices=STEPS, help="start at this step (default: what worked last time)")
+    ap.add_argument("--no-archive", action="store_true", help="never fall back to a Wayback Machine copy")
+    args = ap.parse_args()
+
+    url = args.url if "://" in args.url else "https://" + args.url
+    host = urlparse(url).hostname or ""
+    if not host:
+        log(f"not a URL: {args.url}")
+        return 1
+
+    steps = [s for s in STEPS if not (args.no_archive and s == "archive")]
+    start = args.start or load_cache().get(host, {}).get("method")
+    if start == "archive" and not args.start:
+        start = None  # an archive hit last time shouldn't stop us trying the live site first
+    if start in steps:
+        steps = steps[steps.index(start):]
+
+    tried = []
+    for step in steps:
+        t0 = time.time()
+        try:
+            status, html, final_url = RUNNERS[step](url)
+        except Exception as e:
+            reason = f"{type(e).__name__}: {str(e).splitlines()[0][:160] if str(e) else ''}"
+            tried.append({"step": step, "result": reason})
+            log(f"{step}: failed ({reason}) after {time.time() - t0:.0f}s")
+            continue
+        reason = "no archived copy" if (step == "archive" and status == 404 and not html) else block_reason(status, html)
+        if reason:
+            tried.append({"step": step, "result": reason})
+            log(f"{step}: blocked ({reason}) after {time.time() - t0:.0f}s")
+            continue
+
+        if step != "archive":
+            remember(host, step)
+        captured = final_url.split("#captured=")[1] if "#captured=" in final_url else None
+        md = html if args.raw else to_markdown(html, url)
+        if args.max_chars and len(md) > args.max_chars:
+            md = md[: args.max_chars] + f"\n\n[... cut at {args.max_chars} of {len(md)} characters]"
+        sd = structured_data(html)
+        note = f"read via {step} (HTTP {status}, {time.time() - t0:.0f}s)"
+        if captured:
+            note += f"; ARCHIVED COPY captured {captured}, may be out of date"
+        log(note)
+
+        if args.json:
+            print(json.dumps({"url": url, "final_url": final_url.split("#captured=")[0], "method": step,
+                              "status": status, "archived_on": captured, "title": title_of(html),
+                              "structured": sd, "markdown": md, "tried": tried}, ensure_ascii=False, indent=1))
+        else:
+            if captured:
+                print(f"> Archived copy from the Wayback Machine, captured {captured}. Prices, stock and other "
+                      f"live details may be out of date.\n")
+            if sd and not args.raw:
+                print("Structured data (JSON-LD):\n```json\n" + json.dumps(sd, ensure_ascii=False, indent=1)[:4000]
+                      + "\n```\n")
+            print(md)
+        return 0
+
+    summary = "; ".join(f"{t['step']}: {t['result']}" for t in tried)
+    log(f"BLOCKED at every step ({summary}). Next: the user's own browser, if this machine has one and the user "
+        f"allows it, or another source for the same information.")
+    if args.json:
+        print(json.dumps({"url": url, "method": None, "blocked": True, "tried": tried}, indent=1))
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
