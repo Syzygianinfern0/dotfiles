@@ -18,6 +18,8 @@ _path_prepend "$HOME/bin"
 unset _b; unset -f _path_prepend
 export PATH
 export EDITOR=nano
+# Owner-only new files, like ~/.zshenv (shared servers; see docs/usage.md).
+umask 077
 
 # ── Non-interactive: stop here ─────────────────────────────────────────
 case $- in *i*) ;; *) return ;; esac

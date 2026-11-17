@@ -26,6 +26,11 @@ export BREW_PREFIX
 
 export EDITOR=nano
 
+# Shared Linux servers: everyone's primary group is the AD-wide "domain users",
+# so group-readable means everyone-readable. New files start owner-only; share a
+# folder with one person via ACLs (see docs/usage.md).
+[[ "$OSTYPE" == linux* ]] && umask 077
+
 # Ubuntu's /etc/zsh/zshrc runs compinit itself; let zsh-autocomplete do it.
 skip_global_compinit=1
 

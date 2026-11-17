@@ -51,6 +51,24 @@ Not tracked; sourced if present:
 
 The servers' login shell is bash. The managed `~/.bash_profile` hands a plain `ssh host` session to zsh, but stays in bash for `bash -lc cmd`, `ssh host cmd`, agent backends (Codex, Cursor) and sessions without a terminal, so their commands still run. `~/.bashrc` puts `~/bin` and `~/.local/bin` on PATH first, so `ssh host uv ...` works too. If zsh is missing, the login stays in bash instead of disconnecting.
 
+## Private files on the servers
+
+On the servers every user's primary group is the directory-wide "domain users", so group permissions give access to everyone. Two settings keep files private:
+
+- The home directory is `700` (set once per host by hand: `chmod 700 ~`; chezmoi doesn't manage it).
+- `.zshenv` and `.bashrc` set `umask 077` on Linux, so new files and folders are owner-only.
+
+To share one folder with one person, use ACLs instead of loosening `~`:
+
+```sh
+setfacl -m u:USER:x ~                # pass through ~ only (no listing)
+setfacl -R -m u:USER:rX ~/some/dir   # read access (rwX to let them write)
+setfacl -R -d -m u:USER:rX ~/some/dir  # same for files added later
+setfacl -x u:USER ~                  # stop sharing (and -R -x on the folder)
+```
+
+A later `chmod 700 ~` resets the ACL mask and silently drops the pass-through; re-run the first line if sharing stops working. `getfacl ~` shows who has access.
+
 ## Everyday chezmoi
 
 ```sh
