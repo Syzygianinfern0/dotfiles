@@ -1,0 +1,501 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["nvidia-ml-py>=12.535"]
+# ///
+"""Wait for free GPU(s), hold them, and optionally run a command on them.
+
+A GPU counts as free when its used memory is below --threshold-mib (default 500) and no other
+gpu_run process on this machine has claimed it. "Used" is NVML's v2 figure, the same number
+nvidia-smi prints; the older v1 call also counts ~770 MiB of driver-reserved memory, so an idle
+A100 never looks free through it. Once a GPU is free, this script creates a CUDA context on it
+and allocates --hold-mib, which pushes it over the threshold so other schedulers skip it.
+
+  gpu_run.py                          # hold the first free GPU until Ctrl-C / SIGTERM
+  gpu_run.py -- python train.py       # hold it, run the command on it, hand it over
+  gpu_run.py -n 2 -- torchrun ...     # wait until two GPUs are free at the same time
+  gpu_run.py --status                 # show per-GPU memory, processes and claims, then exit
+
+The command runs with CUDA_VISIBLE_DEVICES=<idx[,idx...]> and CUDA_DEVICE_ORDER=PCI_BUS_ID, so
+inside it the grabbed GPUs are cuda:0, cuda:1, ... With -n > 1, NCCL_P2P_DISABLE=1 is also set
+unless it's already in the environment (needed on PCIe-only boxes without NVLink).
+
+Hand-off: the placeholder on each GPU is kept until the command's own processes use at least
+--handoff-mib there, so there's never a window where the GPU looks free. A command that never
+reaches that much keeps the placeholder until --handoff-timeout (0 = until it exits).
+
+With --reserve-mib, the card is instead filled with 1 GiB placeholder chunks down to --headroom-mib
+free, and chunks are freed as the command allocates, until the command alone uses --reserve-mib.
+Use it for jobs that need most of a card: other users' schedulers that place jobs by free memory
+otherwise move in while the model is still loading.
+
+Several copies can wait at once: claims are recorded in a lock-protected file under
+~/.cache/gpu_run/<hostname>/, so two waiters never take the same GPU. Claims of dead processes
+are dropped automatically.
+
+Exit code: the command's exit code (128+N if it died from signal N), 130 if stopped while waiting.
+"""
+
+import argparse
+import ctypes
+import fcntl
+import json
+import os
+import pwd
+import signal
+import subprocess
+import sys
+import time
+from contextlib import contextmanager
+
+import pynvml as nv
+
+PR_SET_PDEATHSIG = 1
+
+
+def log(msg):
+    print(f"[gpu_run {time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+# ---------------------------------------------------------------- NVML helpers
+
+def mem_info(handle):
+    """(used_mib, total_mib) as nvidia-smi reports them (excluding driver-reserved memory)."""
+    try:
+        m = nv.nvmlDeviceGetMemoryInfo(handle, version=nv.nvmlMemory_v2)
+    except (nv.NVMLError, AttributeError, TypeError):
+        m = nv.nvmlDeviceGetMemoryInfo(handle)  # old driver: v1, includes reserved
+    return m.used >> 20, m.total >> 20
+
+
+def gpu_procs(handle):
+    """[(pid, used_mib)], one entry per pid (a pid can be listed as both compute and graphics)."""
+    out = {}
+    for fn in (nv.nvmlDeviceGetComputeRunningProcesses, nv.nvmlDeviceGetGraphicsRunningProcesses):
+        try:
+            for p in fn(handle):
+                out[p.pid] = max(out.get(p.pid, 0), (p.usedGpuMemory or 0) >> 20)
+        except nv.NVMLError:
+            pass
+    return list(out.items())
+
+
+def bus_id(handle):
+    b = nv.nvmlDeviceGetPciInfo(handle).busId
+    return b.decode() if isinstance(b, bytes) else b
+
+
+def proc_owner(pid):
+    try:
+        return pwd.getpwuid(os.stat(f"/proc/{pid}").st_uid).pw_name
+    except (OSError, KeyError):
+        return "?"
+
+
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def process_tree(root_pid):
+    """root_pid plus all its descendants, from /proc."""
+    children = {}
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat") as f:
+                ppid = int(f.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            continue
+        children.setdefault(ppid, []).append(int(entry))
+    tree, stack = set(), [root_pid]
+    while stack:
+        pid = stack.pop()
+        tree.add(pid)
+        stack.extend(children.get(pid, []))
+    return tree
+
+
+# ---------------------------------------------------------------- claims between our own waiters
+
+class Claims:
+    """GPU index -> {pid, since, cmd}, in a JSON file guarded by an flock."""
+
+    def __init__(self):
+        # One fixed path per user and machine. It must not depend on environment variables
+        # ($XDG_RUNTIME_DIR, $HOME), which differ between tmux, ssh and cron shells and would
+        # give each its own claims file, so waiters started from different shells wouldn't see
+        # each other. The hostname keeps machines apart if the home directory is ever shared.
+        home = pwd.getpwuid(os.getuid()).pw_dir
+        self.dir = os.path.join(home, ".cache", "gpu_run", os.uname().nodename)
+        os.makedirs(self.dir, mode=0o700, exist_ok=True)
+        self.lock_path = os.path.join(self.dir, "lock")
+        self.path = os.path.join(self.dir, "claims.json")
+
+    @contextmanager
+    def locked(self):
+        with open(self.lock_path, "a") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lf, fcntl.LOCK_UN)
+
+    def read(self):
+        """Live claims only (call with the lock held)."""
+        try:
+            with open(self.path) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = {}
+        return {int(k): v for k, v in data.items() if pid_alive(v.get("pid", -1))}
+
+    def write(self, data):
+        tmp = self.path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({str(k): v for k, v in data.items()}, f, indent=1)
+        os.replace(tmp, self.path)
+
+    def add(self, idxs, cmd):
+        data = self.read()
+        for i in idxs:
+            data[i] = {"pid": os.getpid(), "since": time.strftime("%Y-%m-%d %H:%M:%S"),
+                       "cmd": " ".join(cmd)[:200]}
+        self.write(data)
+
+    def remove(self, idxs):
+        with self.locked():
+            data = self.read()
+            for i in idxs:
+                if data.get(i, {}).get("pid") == os.getpid():
+                    del data[i]
+            self.write(data)
+
+
+# ---------------------------------------------------------------- CUDA placeholder
+
+class CudaHold:
+    """A CUDA context + placeholder allocations on a GPU, selected by PCI bus id (driver API, no torch).
+
+    Memory is held as a list of chunks so it can be given back gradually (see --reserve-mib).
+    """
+
+    def __init__(self, cu, pci_bus_id, hold_mib):
+        self.cu = cu
+        self.ctx = ctypes.c_void_p()
+        self.chunks = []  # [(ptr, mib)]
+        dev = ctypes.c_int()
+        self._check(cu.cuDeviceGetByPCIBusId(ctypes.byref(dev), pci_bus_id.encode()),
+                    "cuDeviceGetByPCIBusId")
+        self._check(cu.cuCtxCreate_v2(ctypes.byref(self.ctx), 0, dev), "cuCtxCreate")
+        # cuCtxCreate pushes the context on this thread's stack; pop it so several holds coexist.
+        self.cu.cuCtxPopCurrent_v2(ctypes.byref(ctypes.c_void_p()))
+        if hold_mib > 0 and not self._alloc(hold_mib):
+            self.release()
+            raise RuntimeError(f"cuMemAlloc of {hold_mib} MiB failed")
+
+    def _check(self, rc, what):
+        if rc != 0:
+            self.release()
+            raise RuntimeError(f"{what} failed with CUDA error {rc}")
+
+    def _alloc(self, mib):
+        ptr = ctypes.c_uint64()
+        self.cu.cuCtxPushCurrent_v2(self.ctx)
+        rc = self.cu.cuMemAlloc_v2(ctypes.byref(ptr), ctypes.c_size_t(mib << 20))
+        self.cu.cuCtxPopCurrent_v2(ctypes.byref(ctypes.c_void_p()))
+        if rc == 0:
+            self.chunks.append((ptr, mib))
+        return rc == 0
+
+    def grow(self, mib, chunk_mib):
+        """Allocate up to mib more in chunk_mib pieces; returns how much was actually allocated."""
+        got = 0
+        while got + chunk_mib <= mib and self._alloc(chunk_mib):
+            got += chunk_mib
+        return got
+
+    def shrink(self, mib):
+        """Free chunks until at least mib has been returned (or nothing is left)."""
+        freed = 0
+        self.cu.cuCtxPushCurrent_v2(self.ctx)
+        while self.chunks and freed < mib:
+            ptr, m = self.chunks.pop()
+            self.cu.cuMemFree_v2(ptr)
+            freed += m
+        self.cu.cuCtxPopCurrent_v2(ctypes.byref(ctypes.c_void_p()))
+        return freed
+
+    @property
+    def held_mib(self):
+        return sum(m for _, m in self.chunks)
+
+    @property
+    def held(self):
+        return bool(self.ctx.value)
+
+    def release(self):
+        if self.ctx.value:
+            self.shrink(1 << 40)
+            self.cu.cuCtxDestroy_v2(self.ctx)
+        self.chunks = []
+        self.ctx = ctypes.c_void_p()
+
+
+# ---------------------------------------------------------------- main logic
+
+def candidates(args):
+    n = nv.nvmlDeviceGetCount()
+    return [i for i in range(n)
+            if (args.gpus is None or i in args.gpus) and (args.exclude is None or i not in args.exclude)]
+
+
+def is_free(args, used, total):
+    if args.min_free_mib is not None:
+        return total - used >= args.min_free_mib
+    return used < args.threshold_mib
+
+
+def print_status(claims):
+    with claims.locked():
+        live = claims.read()
+    for i in range(nv.nvmlDeviceGetCount()):
+        h = nv.nvmlDeviceGetHandleByIndex(i)
+        used, total = mem_info(h)
+        procs = ", ".join(f"{pid}({proc_owner(pid)}:{mib}M)" for pid, mib in gpu_procs(h)) or "-"
+        c = live.get(i)
+        claim = f"  claimed by pid {c['pid']} since {c['since']}" if c else ""
+        print(f"GPU {i}  {used:>6}/{total} MiB  {procs}{claim}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("-n", "--num-gpus", type=int, default=1, help="GPUs to take at once (default 1)")
+    ap.add_argument("--threshold-mib", type=int, default=500,
+                    help="GPU counts as free below this much used memory, as nvidia-smi shows it (default 500)")
+    ap.add_argument("--min-free-mib", type=int, default=None,
+                    help="instead of --threshold-mib: GPU counts as available if at least this much is free "
+                         "(shares the card with whatever is already on it)")
+    ap.add_argument("--hold-mib", type=int, default=2048, help="placeholder allocation per GPU (default 2048)")
+    ap.add_argument("--handoff-mib", type=int, default=1024,
+                    help="release the placeholder once the command uses this much on that GPU (default 1024)")
+    ap.add_argument("--reserve-mib", type=int, default=None,
+                    help="keep the GPU's free memory at --headroom-mib with placeholder chunks until the command "
+                         "itself uses this much, so schedulers that place jobs by free memory can't move in while "
+                         "it loads (e.g. 75000 for a job that needs most of an 80 GB card). Default: off")
+    ap.add_argument("--headroom-mib", type=int, default=8192,
+                    help="with --reserve-mib: free memory left for the command to allocate into (default 8192)")
+    ap.add_argument("--handoff-timeout", type=float, default=0,
+                    help="release the placeholder after this many seconds regardless (default 0 = never)")
+    ap.add_argument("--settle", type=float, default=0,
+                    help="GPU must stay free this many seconds before it's taken (default 0)")
+    ap.add_argument("--poll", type=float, default=0.1, help="seconds between checks while waiting (default 0.1)")
+    ap.add_argument("--heartbeat", type=float, default=600,
+                    help="log a still-waiting line every this many seconds (default 600, 0 = off)")
+    ap.add_argument("--gpus", type=lambda s: {int(x) for x in s.split(",")},
+                    help="only consider these GPU indices, e.g. 0,3,5")
+    ap.add_argument("--exclude", type=lambda s: {int(x) for x in s.split(",")},
+                    help="never take these GPU indices")
+    ap.add_argument("--status", action="store_true", help="print GPU memory, processes and claims, then exit")
+    ap.add_argument("cmd", nargs=argparse.REMAINDER, help="command to run on the GPUs (put it after --)")
+    args = ap.parse_args()
+    cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
+
+    nv.nvmlInit()
+    claims = Claims()
+    if args.status:
+        print_status(claims)
+        return 0
+    if args.num_gpus < 1 or args.num_gpus > len(candidates(args)):
+        ap.error(f"--num-gpus {args.num_gpus} but only {len(candidates(args))} candidate GPUs")
+
+    # An inherited CUDA_VISIBLE_DEVICES would hide GPUs from libcuda and break bus-id lookup.
+    if os.environ.pop("CUDA_VISIBLE_DEVICES", None) is not None:
+        log("ignoring CUDA_VISIBLE_DEVICES from the environment (this script picks the GPUs)")
+    cu = ctypes.CDLL("libcuda.so.1")
+    rc = cu.cuInit(0)
+    if rc != 0:
+        log(f"cuInit failed with CUDA error {rc}")
+        return 1
+
+    stop = {"sig": None, "count": 0, "child": None}
+
+    def on_signal(signum, _frame):
+        stop["sig"] = signum
+        stop["count"] += 1
+        child = stop["child"]
+        if child is not None and child.poll() is None:
+            # Second signal escalates to SIGKILL for the whole command.
+            sig = signal.SIGKILL if stop["count"] > 1 else signum
+            try:
+                os.killpg(child.pid, sig)
+            except ProcessLookupError:
+                pass
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(s, on_signal)
+
+    mode = (f"free >= {args.min_free_mib} MiB" if args.min_free_mib is not None
+            else f"used < {args.threshold_mib} MiB")
+    log(f"waiting for {args.num_gpus} GPU(s) with {mode} "
+        f"(gpus={sorted(candidates(args))}, poll={args.poll}s, settle={args.settle}s)")
+
+    holds = {}          # idx -> CudaHold
+    free_since = {}     # idx -> time first seen free (for --settle)
+    failed = set()
+    t_wait = last_beat = time.time()
+    while stop["sig"] is None:
+        now = time.time()
+        status = {}
+        for i in candidates(args):
+            h = nv.nvmlDeviceGetHandleByIndex(i)
+            used, total = mem_info(h)
+            status[i] = used
+            if is_free(args, used, total):
+                free_since.setdefault(i, now)
+            else:
+                free_since.pop(i, None)
+        ready = [i for i in free_since if now - free_since[i] >= args.settle]
+        if len(ready) >= args.num_gpus:
+            with claims.locked():
+                taken = claims.read()
+                ready = [i for i in ready if i not in taken]
+                if len(ready) >= args.num_gpus:
+                    try:
+                        for i in ready[:args.num_gpus]:
+                            holds[i] = CudaHold(cu, bus_id(nv.nvmlDeviceGetHandleByIndex(i)), args.hold_mib)
+                        claims.add(list(holds), cmd)
+                        break
+                    except RuntimeError as e:
+                        for hd in holds.values():
+                            hd.release()
+                        holds.clear()
+                        key = tuple(ready[:args.num_gpus])
+                        if key not in failed:
+                            log(f"GPU(s) {list(key)} looked free but grabbing failed ({e}); will keep retrying")
+                            failed.add(key)
+        if args.heartbeat and now - last_beat >= args.heartbeat:
+            last_beat = now
+            log(f"still waiting after {(now - t_wait) / 60:.0f} min; used MiB per GPU: {status}")
+        time.sleep(args.poll)
+
+    if not holds:
+        log("stopped before grabbing a GPU")
+        return 130
+
+    idxs = sorted(holds)
+    try:
+        return run_on(args, cmd, idxs, holds, stop, t_wait)
+    finally:
+        for hd in holds.values():
+            hd.release()
+        claims.remove(idxs)
+
+
+def run_on(args, cmd, idxs, holds, stop, t_wait):
+    handles = {i: nv.nvmlDeviceGetHandleByIndex(i) for i in idxs}
+    desc = ", ".join(f"{i} ({bus_id(handles[i])}, {mem_info(handles[i])[0]} MiB used)" for i in idxs)
+    log(f"GRABBED GPU {desc} after {time.time() - t_wait:.0f}s, placeholder pid {os.getpid()}")
+
+    if not cmd:
+        log("holding until Ctrl-C / SIGTERM")
+        while stop["sig"] is None:
+            time.sleep(1)
+        log(f"released GPU {idxs}")
+        return 0
+
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES=",".join(map(str, idxs)), CUDA_DEVICE_ORDER="PCI_BUS_ID")
+    if len(idxs) > 1:
+        env.setdefault("NCCL_P2P_DISABLE", "1")
+
+    def preexec():
+        os.setsid()  # own process group, so signals are forwarded once, to the whole command
+        ctypes.CDLL("libc.so.6").prctl(PR_SET_PDEATHSIG, signal.SIGTERM)  # die if we're killed
+
+    log(f"launching on GPU {','.join(map(str, idxs))}: {' '.join(cmd)}")
+    try:
+        child = subprocess.Popen(cmd, env=env, preexec_fn=preexec)
+    except OSError as e:
+        log(f"could not start command: {e}")
+        return 127
+    stop["child"] = child
+    start = time.time()
+
+    if args.reserve_mib:
+        reserve_loop(args, child, holds, handles, stop, start)
+    else:
+        handoff_loop(args, child, holds, handles, stop, start)
+    for hd in holds.values():
+        hd.release()
+
+    rc = child.wait()
+    if rc < 0:
+        log(f"command killed by signal {-rc} after {time.time() - start:.0f}s")
+        return 128 - rc
+    log(f"command exited with code {rc} after {time.time() - start:.0f}s")
+    return rc
+
+
+def child_mib(handle, tree):
+    return sum(mib for pid, mib in gpu_procs(handle) if pid in tree)
+
+
+def handoff_loop(args, child, holds, handles, stop, start):
+    """Keep each placeholder until the command itself holds --handoff-mib on that GPU."""
+    while any(h.held for h in holds.values()) and child.poll() is None and stop["sig"] is None:
+        tree = process_tree(child.pid)
+        for i, hd in holds.items():
+            if not hd.held:
+                continue
+            mine = child_mib(handles[i], tree)
+            if mine >= args.handoff_mib:
+                hd.release()
+                log(f"command uses {mine} MiB on GPU {i}; released placeholder")
+            elif args.handoff_timeout and time.time() - start > args.handoff_timeout:
+                hd.release()
+                log(f"handoff timeout on GPU {i} (command uses {mine} MiB); released placeholder")
+        time.sleep(0.5)
+
+
+def reserve_loop(args, child, holds, handles, stop, start, chunk_mib=1024, fast=0.05, slow=0.5):
+    """Fill each GPU down to --headroom-mib free, then shrink the placeholder only as the command grows.
+
+    The placeholder tracks (initial placeholder - command's own usage), so memory goes back only to
+    the command: another process can take at most the headroom, never the reservation itself.
+    """
+    base = {}
+    for i, hd in holds.items():
+        used, total = mem_info(handles[i])
+        hd.grow(max(0, total - used - args.headroom_mib), chunk_mib)
+        base[i] = hd.held_mib
+        log(f"reserving GPU {i}: placeholder now {hd.held_mib} MiB, "
+            f"{total - mem_info(handles[i])[0]} MiB free for the command")
+    tree, last_tree = process_tree(child.pid), time.time()
+    while any(h.held for h in holds.values()) and child.poll() is None and stop["sig"] is None:
+        now = time.time()
+        if now - last_tree >= slow:  # new descendants show up within `slow` seconds
+            tree, last_tree = process_tree(child.pid), now
+        timed_out = args.handoff_timeout and now - start > args.handoff_timeout
+        for i, hd in holds.items():
+            if not hd.held:
+                continue
+            mine = child_mib(handles[i], tree)
+            if mine >= args.reserve_mib or timed_out or (not hd.chunks and mine >= base[i]):
+                hd.release()
+                why = ("reached --reserve-mib" if mine >= args.reserve_mib else
+                       "handoff timeout" if timed_out else "placeholder used up")
+                log(f"command uses {mine} MiB on GPU {i} ({why}); released reservation")
+                continue
+            excess = hd.held_mib - max(0, base[i] - mine)
+            if excess > 0:
+                hd.shrink(excess)
+        time.sleep(fast)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

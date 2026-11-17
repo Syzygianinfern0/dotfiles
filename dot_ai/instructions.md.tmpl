@@ -80,7 +80,8 @@ The user works with both Claude Code and Codex. Anything you build for AI agents
 - **You are running on: `{{ if eq .machine "mac" }}the Mac laptop{{ else }}{{ .machine }}{{ end }}`** (hostname `{{ .chezmoi.hostname }}`). Don't ssh to your own alias.
 {{ end -}}
 - Mac laptop plus Linux servers reachable by ssh alias: `swarm1`–`swarm5`, `swarmllm` (Ubuntu, no sudo, home dirs not shared). `swarm5` is the main one. The `swarm6` alias is unused.
-- Prefer the servers' GPUs over the laptop for heavy compute; check `nvidia-smi` before launching and use tmux for long jobs.
+- Prefer the servers' GPUs over the laptop for heavy compute, and use tmux for long jobs.
+- Run GPU jobs on the servers through `gpu_run -- <command>` instead of picking a GPU from `nvidia-smi` yourself: it waits for a free GPU, holds it, and runs the command with `CUDA_VISIBLE_DEVICES` set. `gpu_run --status` shows who is using what; `gpu_run --help` lists options.
 - Dotfiles are managed with chezmoi (`~/.local/share/chezmoi`); edit the source there, not the deployed files. Before changing anything in that repo (including from another directory), read its `AGENTS.md` for the repo rules: public repo, secrets, settings ownership, skill links, rollout to every host.
 
 ### Past sessions
