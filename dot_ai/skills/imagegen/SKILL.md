@@ -23,11 +23,12 @@ text and can't keep exact structure. So:
 
 ## Keys
 
-The script reads `OPENAI_API_KEY` and `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) from the environment, else from
-`~/.config/imagegen.env` (`KEY=VALUE` lines, mode 600). The user's dotfiles deploy that file age-encrypted, so if it's
-missing, `chezmoi apply ~/.config/imagegen.env` usually restores it (chezmoi needs its age key on the machine). If
-that doesn't work, ask the user to create the file themselves. Never ask them to paste keys into the chat, and never
-print, cat or echo the file. A backend without a key is skipped.
+The script loads its own secret purpose, `imagegen` (`~/.config/secrets/imagegen.env`), by itself; no `with-secret`
+wrapper is needed, and its keys win over any `OPENAI_API_KEY` / `GEMINI_API_KEY` in the environment. These keys are
+for image generation only: never use them for other jobs. If `with-secret --list` doesn't show `imagegen`, run
+`chezmoi apply ~/.config/secrets/imagegen.env` (chezmoi needs its age key on the machine); if that fails, ask the user
+to run `with-secret --add imagegen`. Never ask them to paste keys into the chat, and never print the file. A backend
+without a key is skipped.
 
 ## Choose providers and models first
 

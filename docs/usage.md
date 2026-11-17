@@ -38,6 +38,7 @@ The `ls`, `cat` and `df` aliases are skipped in Claude Code agent shells (`CLAUD
 | `chat2md [session-id] [-o out.md]` | print a Claude Code or Codex session as Markdown: human messages and final replies only (default: latest session of either agent in this folder; reads Codex's `.jsonl.zst` with Python 3.14+ or the `zstd` command) |
 | `check-swarm5-ssh [host] [interval]` | poll until `host` (default `swarm5`) accepts ssh, then notify |
 | `gpu_run [options] -- <command>` | wait for free GPU(s), hold them, and run the command on them (`--status` for per-GPU usage, `--help` for options). Deployed mode 0700 so other users on shared servers can't read or run it |
+| `with-secret <purpose> -- <command>` | run a command with one purpose's API keys from `~/.config/secrets/` (`--list` to see purposes, `--add <purpose>` to add a key; see [secrets](secrets.md)) |
 
 ## Machine-local overrides
 

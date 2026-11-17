@@ -84,6 +84,12 @@ The user works with both Claude Code and Codex. Anything you build for AI agents
 - Run GPU jobs on the servers through `gpu_run -- <command>` instead of picking a GPU from `nvidia-smi` yourself: it waits for a free GPU, holds it, and runs the command with `CUDA_VISIBLE_DEVICES` set. `gpu_run --status` shows who is using what; `gpu_run --help` lists options.
 - Dotfiles are managed with chezmoi (`~/.local/share/chezmoi`); edit the source there, not the deployed files. Before changing anything in that repo (including from another directory), read its `AGENTS.md` for the repo rules: public repo, secrets, settings ownership, skill links, rollout to every host.
 
+### API keys
+
+- Jobs get API keys only through `with-secret <purpose> -- <command>`, which runs the command with that one purpose's keys in its environment and nothing else's. `with-secret --list` shows each purpose's name, the variable names it sets and what it's for, never the values. For long jobs, call it inside the tmux command (`tmux new -d -s job 'with-secret <purpose> -- ...'`). Subagents get the purpose name, never a key.
+- Use the purpose the user named, or the one whose description clearly matches the job. If none fits or it's ambiguous, ask. Never take a key from another tool's file or another purpose, and don't read or print the files in `~/.config/secrets/`.
+- Code should read keys from environment variables only, with no fallback to key files. To add a key, the user runs `with-secret --add <purpose>` in their own terminal (it prompts for the value hidden, then encrypts, commits and pushes it); never ask them to paste a key into the chat.
+
 ### Past sessions
 
 - To read another Claude Code or Codex session (e.g. when given a session ID), run `chat2md <session-id>`: it prints just the human messages and final replies as Markdown. With no argument it shows the latest session (either agent) for the current directory. Transcripts are per machine, so it only finds sessions from this host.

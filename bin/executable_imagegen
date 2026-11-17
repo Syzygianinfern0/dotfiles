@@ -14,8 +14,9 @@
   imagegen figures.yaml --quote [--json]         # what this run would cost on each available model
   imagegen --sheet-only OUT_DIR                  # rebuild the contact sheet
 
-Keys: OPENAI_API_KEY and GEMINI_API_KEY (or GOOGLE_API_KEY) from the environment, else from
-~/.config/imagegen.env (KEY=VALUE lines, mode 600; path overridable with IMAGEGEN_ENV).
+Keys: the "imagegen" secret purpose, ~/.config/secrets/imagegen.env (KEY=VALUE lines, mode 600; path
+overridable with IMAGEGEN_ENV), whose OPENAI_API_KEY / GEMINI_API_KEY (or GOOGLE_API_KEY) take precedence
+over the environment. Without that file, keys come from the environment.
 A backend with no key is skipped with a warning.
 
 Prompts file (YAML):
@@ -72,8 +73,9 @@ KEY_VARS = {"openai": ["OPENAI_API_KEY"], "gemini": ["GEMINI_API_KEY", "GOOGLE_A
 
 
 def load_key_file():
-    """Fill missing key variables from the env file. Never prints values."""
-    path = Path(os.environ.get("IMAGEGEN_ENV", Path.home() / ".config/imagegen.env")).expanduser()
+    """Load key variables from imagegen's own secrets file, overriding the environment, so a key
+    exported for some other purpose is never used here. Never prints values."""
+    path = Path(os.environ.get("IMAGEGEN_ENV", Path.home() / ".config/secrets/imagegen.env")).expanduser()
     if not path.exists():
         return
     if path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
@@ -85,7 +87,7 @@ def load_key_file():
             continue
         k, v = line.split("=", 1)
         k, v = k.strip(), v.strip().strip("'\"")
-        if k in wanted and v and not os.environ.get(k):
+        if k in wanted and v:
             os.environ[k] = v
 
 
@@ -557,7 +559,7 @@ def main():
             print(f"warning: no API key for {b}, skipping it", file=sys.stderr)
         backends = [b for b in backends if have_key(b)]
         if not backends:
-            sys.exit("no backend has an API key (OPENAI_API_KEY / GEMINI_API_KEY or ~/.config/imagegen.env)")
+            sys.exit("no backend has an API key (~/.config/secrets/imagegen.env, or OPENAI_API_KEY / GEMINI_API_KEY)")
     jobs = build_jobs(spec, backends, only, a.n, base)
     models = {"openai": a.openai_model, "gemini": a.gemini_model}
 
