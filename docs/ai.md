@@ -133,3 +133,4 @@ webread <url> --json          # method, status, final_url, structured data, mark
 webread <url> --no-archive    # live page or nothing
 ```
 
+The shared instructions also warn agents that drive Chrome through the browser extension not to close their last own tab while they still need a tab the user added to the group: closing it removes the whole group (confirmed in a test on 2026-11-17). Only Claude Code has these tools, so the rule has no Codex counterpart.
