@@ -57,7 +57,7 @@ Enforced for **Claude**: model and effort (per model), theme, `cleanupPeriodDays
 
 One exception, on the machine named `mac` only: if OpenAIDR has added its hooks to the file (commands containing `openaidr-hook-v1`), those hook entries and the `env` block it adds (telemetry to a local collector) are copied over as they are (with the enforced env vars above merged in first), so `chezmoi apply` doesn't remove them. Nothing of them is stored in the repo. Codex has no counterpart in the repo: OpenAIDR puts its Codex hooks in `~/.codex/hooks.json`, which isn't managed, and `config.toml` keeps whatever Codex writes anyway.
 
-Enforced for **Codex**: model and reasoning effort, multi-agent and memories features, the built-in status line items, and the OpenAI developer-docs MCP server.
+Enforced for **Codex**: model and reasoning effort, subagents (`agents.enabled = true`) and memories features, the built-in status line items, and the OpenAI developer-docs MCP server. The deprecated `features.multi_agent` key is removed on apply; subagent implementation selection uses the client's defaults. Claude Code enables subagents without an equivalent configuration switch.
 
 Not managed for either: MCP servers and plugins you add in the apps, command allow rules (`~/.codex/rules/`), login state.
 
