@@ -7,7 +7,7 @@ To turn one on, add a one-line link file containing `../../.ai/skills/<name>`:
 - Claude: `private_dot_claude/skills/symlink_<name>`
 - Codex: `private_dot_codex/skills/symlink_<name>`
 
-Delete the link file to turn it off again. Currently linked (both agents): `with-the-power-of-friendship`, `netlify-publish`, `imagegen`, `weekly-report`, `webread`.
+Delete the link file to turn it off again. Currently linked (both agents): `with-the-power-of-friendship`, `netlify-publish`, `imagegen`, `weekly-report`, `webread`, `share-chat`.
 
 | Skill | Origin | Notes |
 |---|---|---|
@@ -23,3 +23,4 @@ Delete the link file to turn it off again. Currently linked (both agents): `with
 | imagegen | swarm5 Claude Code, 2026-11-12 | Uses `~/bin/imagegen` (OpenAI + Gemini image APIs); keys in the `imagegen` secret purpose, `~/.config/secrets/imagegen.env`, stored age-encrypted (`dot_config/private_secrets/encrypted_private_imagegen.env.age`) |
 | weekly-report | swarm5 Claude Code, 2026-11-16 | One-page LaTeX advisor report; reports live in `~/code/weekly-reports`; needs `latexmk`, `pdfinfo`, `chat2md` |
 | webread | Mac Claude Code, 2026-11-16 | Uses `~/bin/webread` (curl_cffi → headless Camoufox → Wayback); browser step needs no sudo but downloads Camoufox on first use |
+| share-chat | Mac Claude Code, 2026-11-22 | Uses `~/bin/share-chat` (renders a session as a ChatGPT-style page; `--publish` deploys to one Netlify site via `npx netlify-cli`); site ID and links in `~/.config/share-chat/config.json`, local site copy in `~/.local/share/share-chat/site` |

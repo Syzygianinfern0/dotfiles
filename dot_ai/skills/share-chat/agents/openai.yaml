@@ -1,0 +1,4 @@
+interface:
+  display_name: "Share Chat"
+  short_description: "Publish an agent session as a ChatGPT-style share page on Netlify"
+  default_prompt: "Use $share-chat to make a share link for this chat."

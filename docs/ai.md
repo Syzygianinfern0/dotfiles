@@ -21,6 +21,7 @@ The repo sets up two agents, [Claude Code](https://claude.com/claude-code) and [
 ~/bin/panel-ask                ← bin/executable_panel-ask (run a cross-family model panel)
 ~/bin/imagegen                 ← bin/executable_imagegen  (batch image generation, OpenAI + Gemini)
 ~/bin/webread                  ← bin/executable_webread   (read pages that block bots; HTTP → Camoufox → Wayback)
+~/bin/share-chat              ← bin/executable_share-chat (agent session → share page, optional Netlify publish)
 ```
 
 `~/.claude` and `~/.codex` are created with mode 700.
@@ -134,3 +135,16 @@ webread <url> --no-archive    # live page or nothing
 ```
 
 The shared instructions also warn agents that drive Chrome through the browser extension not to close their last own tab while they still need a tab the user added to the group: closing it removes the whole group (confirmed in a test on 2026-11-17). Only Claude Code has these tools, so the rule has no Codex counterpart.
+
+## Sharing chats
+
+`~/bin/share-chat` (the `share-chat` skill) is a `uv` script that renders a Claude Code or Codex session as one self-contained page in the style of a ChatGPT share link: the human's messages as bubbles, the agent's final answers as prose, and each response's progress notes and tool steps folded into a "Worked for 3m 42s" dropdown whose steps expand to show commands, outputs, subagent reports and screenshots. It parses both transcript formats (including zstd-compressed Codex rollouts) into one model, highlights code with Pygments at build time, follows the viewer's light/dark setting, and replaces the home folder with `~` and the username with `user`. It was built after a Nov 2026 survey of existing exporters (claude-replay, claude-code-log, simonw's claude-code-transcripts, chat2html, codex-transcript-viewer): none produced a page that read like a chat share.
+
+`--publish` puts the page on one Netlify site, created on first use as `chats-<random>`, under an unguessable path (`<title-slug>-<6 hex>`); the site serves `noindex` and a `robots.txt` that disallows everything, and the root page lists nothing. The site ID and the session → link map live in `~/.config/share-chat/config.json`, and the local copy of the site in `~/.local/share/share-chat/site` (each deploy uploads the whole folder). Both are per machine, so publish from the Mac. Before publishing it scans the page for likely secrets (built-in patterns plus `gitleaks` when installed) and email addresses, and refuses (exit 3) until the findings are redacted or `--force` is given; the skill tells agents to show the findings and get a yes first.
+
+```
+share-chat <id> -o page.html            # render only
+share-chat <id> --check                 # scan for secrets and emails
+share-chat <id> --publish [--redact S] [--turns 1-3] [--no-steps] [--title T]
+share-chat --list | share-chat <id> --unpublish
+```

@@ -1,0 +1,881 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["markdown-it-py>=3", "pygments>=2.17"]
+# ///
+"""Render a Claude Code or Codex session as a clean, shareable HTML page.
+
+Looks like a chat share page: the human's messages as bubbles, the agent's
+replies as prose, and each run of tool calls / reasoning folded into one
+"Worked · ran 3 commands" line that expands. One self-contained file.
+
+Usage:
+  share-chat [session-id|path] [-o out.html]   # render to a file
+  share-chat [session] --check                 # scan for secrets / emails only
+  share-chat [session] --publish               # publish to Netlify, print the link
+  share-chat [session] --unpublish             # take it down again
+  share-chat --list                            # published chats and links
+Options: --title T, --no-steps, --redact STR (repeatable), --turns 1-3,5, --force
+
+With no session it uses the newest Claude Code or Codex session for the
+current folder. Published chats live in one Netlify site (created on first
+use; ID kept in ~/.config/share-chat/config.json) under unguessable paths;
+the local copy of the site is ~/.local/share/share-chat/site.
+"""
+import argparse, html, io, json, os, re, secrets, shutil, subprocess, sys, tempfile
+from datetime import datetime
+from pathlib import Path
+
+from markdown_it import MarkdownIt
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import get_lexer_by_name, guess_lexer
+from pygments.util import ClassNotFound
+
+HOME = Path.home()
+CLAUDE_PROJECTS = HOME / ".claude" / "projects"
+CODEX = HOME / ".codex"
+CODEX_GLOBS = ("sessions/*/*/*/*.jsonl", "sessions/*/*/*/*.jsonl.zst",
+               "archived_sessions/*.jsonl", "archived_sessions/*.jsonl.zst")
+
+# ── locating / opening sessions (same rules as ~/bin/chat2md) ────────────────
+
+def open_text(path):
+    path = Path(path)
+    if path.suffix != ".zst":
+        return open(path, encoding="utf-8")
+    try:
+        from compression import zstd
+        return zstd.open(path, "rt", encoding="utf-8")
+    except ImportError:
+        out = subprocess.run(["zstd", "-dcq", str(path)], capture_output=True)
+        if out.returncode:
+            sys.exit(f"can't decompress {path}")
+        return io.StringIO(out.stdout.decode("utf-8", "replace"))
+
+
+def records(path):
+    for line in open_text(path):
+        try:
+            yield json.loads(line)
+        except json.JSONDecodeError:
+            pass
+
+
+def session_name(path):
+    n = Path(path).name
+    for ext in (".jsonl.zst", ".jsonl"):
+        if n.endswith(ext):
+            return n[: -len(ext)]
+    return n
+
+
+def claude_project_dir(cwd):
+    return CLAUDE_PROJECTS / re.sub(r"[^A-Za-z0-9]", "-", cwd)
+
+
+def codex_files():
+    return [p for g in CODEX_GLOBS for p in CODEX.glob(g)]
+
+
+def first_record(path):
+    return next(records(path), {})
+
+
+def resolve(arg):
+    if not arg:
+        cwd = os.getcwd()
+        cands = list(claude_project_dir(cwd).glob("*.jsonl"))
+        recent = sorted(codex_files(), key=lambda p: p.stat().st_mtime, reverse=True)[:100]
+        cands += [p for p in recent if (first_record(p).get("payload") or {}).get("cwd") == cwd]
+        if not cands:
+            sys.exit(f"no sessions found for {cwd}")
+        return max(cands, key=lambda p: p.stat().st_mtime)
+    if os.path.isfile(arg):
+        return Path(arg)
+    hits = list(CLAUDE_PROJECTS.glob(f"*/{arg}.jsonl"))
+    hits += [p for p in codex_files() if session_name(p).endswith(arg)]
+    if not hits:
+        sys.exit(f"session not found: {arg}")
+    return hits[0]
+
+# ── common model ─────────────────────────────────────────────────────────────
+# A session is a list of turns: {"user": str, "time": iso, "items": [...]}
+# where items are {"kind": "text", "text": md}
+#              or {"kind": "step", "tool": name, "label": short, "input": str,
+#                  "output": str, "images": [data-uri], "lang": str}
+#              or {"kind": "thought", "text": str}
+#              or {"kind": "event", "text": str}   (e.g. a background agent finished)
+
+
+def add(cur, rec, item):
+    item["ts"] = rec.get("timestamp")
+    cur["items"].append(item)
+
+
+def short(s, n=90):
+    s = " ".join(str(s).split())
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def tool_text(content):
+    """Flatten a tool result's content into (text, [image data URIs])."""
+    if content is None:
+        return "", []
+    if isinstance(content, str):
+        return content, []
+    texts, imgs = [], []
+    for b in content:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") in ("text", "input_text", "output_text"):
+            texts.append(b.get("text", ""))
+        elif b.get("type") == "image":
+            src = b.get("source") or {}
+            if src.get("type") == "base64":
+                imgs.append(f"data:{src.get('media_type', 'image/png')};base64,{src['data']}")
+        elif b.get("type") == "input_image" and b.get("image_url"):
+            imgs.append(b["image_url"])
+    return "\n".join(texts), imgs
+
+
+CLAUDE_TOOL_LABELS = {
+    "Bash": lambda i: i.get("description") or short(i.get("command", "")),
+    "Read": lambda i: "Read " + Path(i.get("file_path", "")).name,
+    "Write": lambda i: "Wrote " + Path(i.get("file_path", "")).name,
+    "Edit": lambda i: "Edited " + Path(i.get("file_path", "")).name,
+    "MultiEdit": lambda i: "Edited " + Path(i.get("file_path", "")).name,
+    "Glob": lambda i: "Searched files for " + i.get("pattern", ""),
+    "Grep": lambda i: "Searched code for " + short(i.get("pattern", ""), 50),
+    "WebSearch": lambda i: "Searched the web: " + short(i.get("query", ""), 70),
+    "WebFetch": lambda i: "Read " + re.sub(r"^https?://(www\.)?", "", i.get("url", "")).split("/")[0],
+    "Agent": lambda i: "Subagent: " + i.get("description", ""),
+    "Task": lambda i: "Subagent: " + i.get("description", ""),
+    "Skill": lambda i: "Used skill " + i.get("skill", ""),
+    "TodoWrite": lambda i: "Updated the to-do list",
+    "ToolSearch": lambda i: "Loaded tools",
+}
+
+LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "typescript", ".sh": "bash",
+               ".json": "json", ".html": "html", ".css": "css", ".md": "markdown",
+               ".tex": "latex", ".yaml": "yaml", ".yml": "yaml", ".toml": "toml"}
+
+
+def claude_step(block):
+    name, inp = block.get("name", "tool"), block.get("input") or {}
+    label_fn = CLAUDE_TOOL_LABELS.get(name)
+    try:
+        label = label_fn(inp) if label_fn else name.split("__")[-1].replace("_", " ")
+    except Exception:
+        label = name
+    lang = "text"
+    if name == "Bash":
+        body, lang = inp.get("command", ""), "bash"
+    elif name in ("Write",):
+        body = inp.get("content", "")
+        lang = LANG_BY_EXT.get(Path(inp.get("file_path", "")).suffix, "text")
+    elif name in ("Edit",):
+        body = "\n".join(["- " + l for l in inp.get("old_string", "").splitlines()] +
+                         ["+ " + l for l in inp.get("new_string", "").splitlines()])
+        lang = "diff"
+    elif name in ("Agent", "Task"):
+        body, lang = inp.get("prompt", ""), "markdown"
+    else:
+        body, lang = json.dumps(inp, indent=2, ensure_ascii=False), "json"
+    return {"kind": "step", "tool": name, "label": label, "input": body, "lang": lang,
+            "output": "", "images": [], "id": block.get("id")}
+
+
+NOISE_TAGS = ("system-reminder", "command-name", "command-message", "command-args",
+              "local-command-stdout", "local-command-caveat")
+
+
+def clean_user_text(t):
+    for tag in NOISE_TAGS:
+        t = re.sub(rf"<{tag}>.*?</{tag}>", "", t, flags=re.S)
+    t = re.sub(r"</?pasted_content[^>]*>", "", t)
+    return t.strip()
+
+
+def parse_claude(path):
+    title, model, turns, cur, pending, by_id = None, None, [], None, {}, {}
+    for rec in records(path):
+        t = rec.get("type")
+        if t in ("ai-title", "summary"):
+            title = rec.get("aiTitle") or rec.get("title") or rec.get("summary") or title
+        if rec.get("isSidechain") or rec.get("isMeta") or rec.get("isCompactSummary"):
+            continue
+        att = rec.get("attachment") or {}
+        if t == "attachment" and att.get("type") == "queued_command" and \
+                (att.get("origin") or {}).get("kind") == "human" and att.get("prompt", "").strip():
+            # a message the human sent while the agent was still working
+            cur = {"user": clean_user_text(att["prompt"]), "time": att.get("timestamp") or rec.get("timestamp"),
+                   "items": []}
+            turns.append(cur)
+            continue
+        if t == "user":
+            c = rec["message"]["content"]
+            if isinstance(c, list) and any(b.get("type") == "tool_result" for b in c):
+                for b in c:
+                    if b.get("type") == "tool_result" and b.get("tool_use_id") in pending:
+                        txt, imgs = tool_text(b.get("content"))
+                        st = pending.pop(b["tool_use_id"])
+                        if txt.startswith("Async agent launched"):
+                            txt = ""  # real result arrives later in a task-notification
+                        st["output"], st["images"] = txt, imgs
+                        st["error"] = bool(b.get("is_error"))
+                continue
+            text = c if isinstance(c, str) else "\n\n".join(
+                b.get("text", "") for b in c if b.get("type") == "text")
+            if "<task-notification>" in text:
+                m = re.search(r"<summary>(.*?)</summary>", text, re.S)
+                r = re.search(r"<result>(.*?)</result>", text, re.S)
+                u = re.search(r"<tool-use-id>(.*?)</tool-use-id>", text, re.S)
+                label = (m.group(1) if m else "Background task finished").strip()
+                result = html.unescape(r.group(1).strip()) if r else ""
+                if u and u.group(1) in by_id and result:
+                    by_id[u.group(1)]["output"] = result
+                    by_id[u.group(1)]["output_md"] = True
+                    result = ""  # shown on the subagent step already
+                if cur:
+                    add(cur, rec, {"kind": "event", "text": label, "result": result})
+                continue
+            if text.lstrip().startswith("[Request interrupted"):
+                continue
+            text = clean_user_text(text)
+            if not text:
+                continue
+            cur = {"user": text, "time": rec.get("timestamp"), "items": []}
+            turns.append(cur)
+        elif t == "assistant" and cur:
+            msg = rec["message"]
+            model = msg.get("model") or model
+            for b in msg.get("content", []):
+                bt = b.get("type")
+                if bt == "text" and b["text"].strip():
+                    add(cur, rec, {"kind": "text", "text": b["text"].strip()})
+                elif bt == "thinking" and b.get("thinking", "").strip():
+                    add(cur, rec, {"kind": "thought", "text": b["thinking"].strip()})
+                elif bt == "tool_use":
+                    st = claude_step(b)
+                    pending[b["id"]] = by_id[b["id"]] = st
+                    add(cur, rec, st)
+    if model and model.startswith("<"):
+        model = None
+    return {"agent": "Claude Code", "title": title, "model": model, "turns": turns}
+
+
+CODEX_NOISE = ("<", "# AGENTS.md instructions")
+
+
+def codex_title(sid):
+    title = None
+    try:
+        for rec in records(CODEX / "session_index.jsonl"):
+            if rec.get("id") == sid:
+                title = rec.get("thread_name") or title
+    except OSError:
+        pass
+    return title
+
+
+def codex_step(p):
+    name = p.get("name", "tool")
+    raw = p.get("arguments") if p.get("type") == "function_call" else p.get("input", "")
+    lang, label, body = "text", name, raw or ""
+    try:
+        args = json.loads(raw) if p.get("type") == "function_call" else None
+    except (TypeError, json.JSONDecodeError):
+        args = None
+    if isinstance(args, dict):
+        cmd = args.get("cmd") or args.get("command")
+        if isinstance(cmd, list):
+            cmd = " ".join(cmd[2:] if cmd[:2] in (["bash", "-lc"], ["zsh", "-lc"]) else cmd)
+        if cmd:
+            body, lang, label = cmd, "bash", short(cmd)
+        else:
+            body, lang = json.dumps(args, indent=2, ensure_ascii=False), "json"
+    if name == "apply_patch":
+        label, lang = "Edited files", "diff"
+        files = re.findall(r"\*\*\* (?:Update|Add) File: (.+)", body)
+        if files:
+            label = "Edited " + ", ".join(Path(f).name for f in files[:3])
+    elif name == "exec" and p.get("type") == "custom_tool_call":
+        lang = "javascript"
+        m = re.findall(r"tools\.(\w+)", body)
+        label = "Ran " + ", ".join(dict.fromkeys(x.replace("__", " ").replace("_", " ") for x in m)) if m else "Ran a script"
+    return {"kind": "step", "tool": name, "label": label, "input": body, "lang": lang,
+            "output": "", "images": [], "id": p.get("call_id")}
+
+
+def parse_codex(path):
+    sid, model, turns, cur, pending = None, None, [], None, {}
+    for rec in records(path):
+        p = rec.get("payload") or {}
+        typ = rec.get("type")
+        if typ == "session_meta":
+            sid = p.get("id") or p.get("session_id")
+            continue
+        if typ == "turn_context":
+            model = p.get("model") or model
+            continue
+        if typ == "event_msg" and p.get("type") == "thread_settings_applied":
+            model = (p.get("thread_settings") or {}).get("model") or model
+        if typ != "response_item":
+            continue
+        kind = p.get("type")
+        if kind == "message" and p.get("role") == "user":
+            parts = [c.get("text", "").strip() for c in p.get("content", [])
+                     if c.get("type") == "input_text"]
+            parts = [x for x in parts if x and not x.startswith(CODEX_NOISE)]
+            if parts:
+                cur = {"user": "\n\n".join(parts), "time": rec.get("timestamp"), "items": []}
+                turns.append(cur)
+        elif not cur:
+            continue
+        elif kind == "message" and p.get("role") == "assistant":
+            for c in p.get("content", []):
+                if c.get("type") == "output_text" and c.get("text", "").strip():
+                    add(cur, rec, {"kind": "text", "text": c["text"].strip()})
+        elif kind == "reasoning":
+            txt = "\n\n".join(s.get("text", "") for s in p.get("summary") or [])
+            if txt.strip():
+                add(cur, rec, {"kind": "thought", "text": txt.strip()})
+        elif kind in ("function_call", "custom_tool_call", "local_shell_call", "web_search_call"):
+            if kind == "web_search_call":
+                q = (p.get("action") or {}).get("query", "")
+                add(cur, rec, {"kind": "step", "tool": "web_search", "label": "Searched the web: " + short(q, 70),
+                                     "input": q, "lang": "text", "output": "", "images": []})
+                continue
+            st = codex_step(p)
+            pending[st["id"]] = st
+            add(cur, rec, st)
+        elif kind in ("function_call_output", "custom_tool_call_output"):
+            st = pending.pop(p.get("call_id"), None)
+            if st:
+                out = p.get("output")
+                if isinstance(out, str):
+                    try:
+                        j = json.loads(out)
+                        out = j.get("output", out) if isinstance(j, dict) else out
+                    except json.JSONDecodeError:
+                        pass
+                st["output"], st["images"] = tool_text(out) if not isinstance(out, str) else (out, [])
+    return {"agent": "Codex", "title": codex_title(sid) if sid else None, "model": model, "turns": turns}
+
+# ── rendering ────────────────────────────────────────────────────────────────
+
+FMT = HtmlFormatter(nowrap=True)
+
+
+def hl(code, lang):
+    try:
+        lexer = get_lexer_by_name(lang or "text")
+    except ClassNotFound:
+        try:
+            lexer = guess_lexer(code)
+        except ClassNotFound:
+            lexer = get_lexer_by_name("text")
+    return highlight(code, lexer, FMT)
+
+
+def md_highlight(code, lang, _attrs):
+    label = html.escape(lang or "")
+    return (f'<div class="code"><div class="code-head"><span>{label}</span>'
+            f'<button class="copy" type="button">Copy</button></div>'
+            f'<pre><code>{hl(code, lang)}</code></pre></div>')
+
+
+MD = MarkdownIt("commonmark", {"html": False, "linkify": False, "highlight": md_highlight,
+                               "breaks": False}).enable(["table", "strikethrough"])
+
+
+def md(text):
+    out = MD.render(text)
+    # markdown-it wraps highlighted output in <pre><code>; unwrap our own block
+    out = re.sub(r'<pre><code[^>]*>(<div class="code">.*?</div>)\s*</code></pre>', r"\1", out, flags=re.S)
+    return out.replace("<a href=", '<a target="_blank" rel="noopener" href=')
+
+
+def user_html(text):
+    # Human messages: keep line breaks, light markdown only if it looks like markdown.
+    if re.search(r"^(#{1,6} |[-*] |\d+\. |```)", text, re.M):
+        return md(text)
+    return "".join(f"<p>{html.escape(p).replace(chr(10), '<br>')}</p>"
+                   for p in re.split(r"\n\s*\n", text) if p.strip())
+
+
+def clip(s, n=4000):
+    s = s.rstrip()
+    if len(s) <= n:
+        return s
+    return s[:n] + f"\n… ({len(s) - n:,} more characters)"
+
+
+def parse_ts(iso):
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def fmt_dur(sec):
+    sec = int(round(sec))
+    if sec < 60:
+        return f"{max(sec, 1)}s"
+    m, s = divmod(sec, 60)
+    if m < 60:
+        return f"{m}m {s}s" if s else f"{m}m"
+    h, m = divmod(m, 60)
+    return f"{h}h {m}m"
+
+
+def segments(turn):
+    """Split a turn into responses. Each response is (start_ts, work_items, final_items).
+
+    A background-task notification starts a new response, as it does in the chat.
+    The final answer is the text after the last tool call; everything before it
+    (progress notes, tool calls, thinking) is the hidden "work"."""
+    segs, cur, start = [], [], turn.get("time")
+    for it in turn["items"]:
+        if it["kind"] == "event":
+            segs.append((start, cur, it))
+            cur, start = [], it.get("ts")
+        else:
+            cur.append(it)
+    segs.append((start, cur, None))
+    out = []
+    for start, items, event in segs:
+        last_step = max((i for i, x in enumerate(items) if x["kind"] != "text"), default=-1)
+        work, final = items[: last_step + 1], items[last_step + 1:]
+        if not final and work:  # no reply after the last step: show the last text anyway
+            idx = max((i for i, x in enumerate(work) if x["kind"] == "text"), default=None)
+            if idx is not None:
+                final = [work[idx]]
+                work = work[:idx] + work[idx + 1:]
+        out.append((start, work, final, event))
+    return out
+
+
+ICONS = {
+    "step": '<svg viewBox="0 0 16 16"><path d="M3 4l3 4-3 4M8 12h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    "search": '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.2 10.2L13.5 13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    "file": '<svg viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4z M9 2v3h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+    "edit": '<svg viewBox="0 0 16 16"><path d="M3 13l1-3.5L10.5 3 13 5.5 6.5 12z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+    "globe": '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.6 8h10.8M8 2.4c-2 2.2-2 9 0 11.2M8 2.4c2 2.2 2 9 0 11.2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
+    "agent": '<svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 13.5c.6-2.6 2.4-4 4.5-4s3.9 1.4 4.5 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+    "thought": '<svg viewBox="0 0 16 16"><path d="M8 2.5a4 4 0 0 0-2.3 7.3V12h4.6V9.8A4 4 0 0 0 8 2.5zM6.3 14h3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    "done": '<svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+}
+
+TOOL_ICON = {"WebSearch": "search", "web_search": "search", "Grep": "search", "Glob": "search",
+             "Read": "file", "Write": "edit", "Edit": "edit", "MultiEdit": "edit", "apply_patch": "edit",
+             "WebFetch": "globe", "Agent": "agent", "Task": "agent"}
+
+
+def step_html(s):
+    if s["kind"] == "thought":
+        return (f'<details class="step"><summary class="step-row">{ICONS["thought"]}<span>Thinking</span></summary>'
+                f'<div class="step-body prose small">{md(s["text"])}</div></details>')
+    if s["kind"] == "text":  # a progress note between tool calls
+        return f'<div class="note prose">{md(s["text"])}</div>'
+    body = ""
+    if s["input"].strip():
+        body += f'<pre class="io"><code>{hl(clip(s["input"], 3000), s["lang"])}</code></pre>'
+    if s["output"].strip() and s.get("output_md"):
+        body += f'<div class="report prose small">{md(s["output"])}</div>'
+    elif s["output"].strip():
+        cls = "io out err" if s.get("error") else "io out"
+        body += f'<pre class="{cls}"><code>{html.escape(clip(s["output"]))}</code></pre>'
+    for src in s["images"]:
+        body += f'<img class="shot" loading="lazy" src="{src}" alt="">'
+    icon = ICONS[TOOL_ICON.get(s["tool"], "step")]
+    row = f'{icon}<span>{html.escape(s["label"])}</span>'
+    if not body:
+        return f'<div class="step"><div class="step-row">{row}</div></div>'
+    return (f'<details class="step"><summary class="step-row">{row}<i class="chev"></i></summary>'
+            f'<div class="step-body">{body}</div></details>')
+
+
+def work_label(start, work, final):
+    t0 = parse_ts(start or "")
+    t1 = parse_ts((final[0] if final else work[-1]).get("ts") or "")
+    only_thought = all(w["kind"] == "thought" for w in work)
+    verb = "Thought" if only_thought else "Worked"
+    if t0 and t1 and t1 > t0:
+        return f"{verb} for {fmt_dur((t1 - t0).total_seconds())}"
+    n = sum(1 for w in work if w["kind"] == "step")
+    return f"{verb}" + (f" · {n} step{'s' if n != 1 else ''}" if n else "")
+
+
+def render_turn_agent(turn, show_steps):
+    out = []
+    for start, work, final, event in segments(turn):
+        if work and show_steps:
+            out.append(f'<details class="work"><summary>{html.escape(work_label(start, work, final))}<i class="chev"></i></summary>'
+                       f'<div class="steps">{"".join(step_html(s) for s in work)}</div></details>')
+        for it in final:
+            out.append(f'<div class="prose answer">{md(it["text"])}</div>')
+        if event:
+            out.append(f'<div class="event">{ICONS["done"]}<span>{html.escape(event["text"])}</span></div>')
+    return "".join(out)
+
+
+def fmt_model(m):
+    if not m:
+        return None
+    m = re.sub(r"-\d{8}$", "", m)
+    pretty = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-fable-5-2": "Fable 5.2",
+              "claude-haiku-5-5": "Haiku 5.5"}
+    if m in pretty:
+        return pretty[m]
+    g = re.match(r"gpt-([\d.]+)(?:-(.+))?$", m)
+    if g:
+        return f"GPT-{g.group(1)}" + (f" {g.group(2).replace('-', ' ').title()}" if g.group(2) else "")
+    return m
+
+
+def fmt_date(iso):
+    d = parse_ts(iso or "")
+    return d.astimezone().strftime("%b %-d, %Y") if d else ""
+
+
+def render(sess, show_steps=True):
+    turns = sess["turns"]
+    plain = re.sub(r"[#*_`>\[\]]+", "", turns[0]["user"])
+    title = sess["title"] or short(plain, 70)
+    meta = " · ".join(x for x in (fmt_model(sess["model"]), fmt_date(turns[0].get("time"))) if x)
+    body = "".join(
+        f'<section class="turn"><div class="user"><div class="bubble prose">{user_html(t["user"])}</div></div>'
+        f'<div class="agent">{render_turn_agent(t, show_steps)}</div></section>' for t in turns)
+    sel = [".prose pre", "pre.io"]
+    css = (HtmlFormatter(style="default").get_style_defs(sel)
+           + "@media (prefers-color-scheme:dark){" + HtmlFormatter(style="github-dark").get_style_defs(sel) + "}"
+           + PAGE_CSS)
+    theme = "codex" if sess["agent"] == "Codex" else "claude"
+    return PAGE.format(title=html.escape(title), meta=html.escape(meta), body=body, css=css,
+                       agent=html.escape(sess["agent"]), theme=theme, js=PAGE_JS, globe=ICONS["globe"])
+
+
+PAGE = """<!doctype html>
+<html lang="en" data-agent="{theme}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="Shared {agent} conversation · {meta}">
+<meta name="robots" content="noindex">
+<style>{css}</style></head>
+<body>
+<header class="bar"><div class="bar-in">
+  <span class="brand">{agent}</span>
+  <span class="bar-title">{title}</span>
+  <span class="bar-meta">{meta}</span>
+</div></header>
+<main class="col">{body}</main>
+<footer class="col foot">Shared from {agent}{dot}</footer>
+<template id="globe">{globe}</template>
+<script>{js}</script>
+</body></html>""".replace("{dot}", "")
+
+PAGE_CSS = r"""
+:root{--bg:#ffffff;--fg:#0d0d0d;--muted:#5d5d5d;--faint:#8f8f8f;--line:rgba(0,0,0,.09);
+--bar:#f9f9f9;--code-bg:#f4f4f4;--chip:#ececec;--link:#0d0d0d;--link-line:#b4b4b4;--err:#b42318;
+--bubble:#f3ece8;--bubble-fg:#0d0d0d;
+--sans:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif;
+--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+[data-agent=codex]{--bubble:#e6eef7}
+@media (prefers-color-scheme:dark){
+:root{--bg:#141414;--fg:#dfdfdf;--muted:#a3a3a3;--faint:#777;--line:rgba(255,255,255,.08);
+--bar:#212121;--code-bg:#1d1d1d;--chip:rgba(255,255,255,.08);--link:#dfdfdf;--link-line:#8a8a8a;--err:#f97066;
+--bubble:#3b2a22;--bubble-fg:#fbf3ee}
+[data-agent=codex]{--bubble:#0d273f;--bubble-fg:#fff}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/26px var(--sans);-webkit-font-smoothing:antialiased}
+.bar{position:sticky;top:0;z-index:5;background:var(--bar);border-bottom:1px solid var(--line)}
+.bar-in{display:flex;align-items:center;gap:16px;height:56px;padding:0 20px}
+.brand{color:var(--faint);font-size:15px;white-space:nowrap;min-width:120px}
+.bar-title{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+.bar-meta{color:var(--faint);font-size:13px;white-space:nowrap;min-width:120px;text-align:right}
+.col{max-width:768px;margin:0 auto;padding:0 24px}
+.turn{padding-top:24px}
+.user{display:flex;justify-content:flex-end;margin-bottom:20px}
+.bubble{background:var(--bubble);color:var(--bubble-fg);border-radius:22px;padding:10px 16px;max-width:70%;
+ line-height:24px;overflow-wrap:anywhere;min-width:0}
+.bubble .code{max-width:100%}.bubble .code pre{white-space:pre-wrap;word-break:break-word}
+.bubble p{margin:0}.bubble p+p,.bubble *+p{margin-top:12px}
+.bubble a{color:inherit;text-decoration-color:currentColor;opacity:.95}
+.bubble th,.bubble td{border-bottom-color:rgba(127,127,127,.28)}
+.bubble table{font-size:14.5px}
+.bubble :not(pre)>code{background:rgba(127,127,127,.22)}
+.bubble h1,.bubble h2,.bubble h3,.bubble h4{font-size:1em;font-weight:600;margin:12px 0 2px}
+.bubble ul,.bubble ol{padding-left:22px;margin:6px 0}
+.agent{padding-bottom:12px}
+.work{margin:0 0 4px}
+.work>summary,.step>summary{list-style:none;cursor:pointer;user-select:none}
+.work>summary::-webkit-details-marker,.step>summary::-webkit-details-marker{display:none}
+.work>summary{display:inline-flex;align-items:center;gap:6px;color:var(--muted);padding:2px 0}
+.work>summary:hover{color:var(--fg)}
+.chev{display:inline-block;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+ transform:rotate(-45deg);margin-left:3px;transition:transform .15s;opacity:.8}
+details[open]>summary .chev{transform:rotate(45deg) translate(-2px,-1px)}
+.steps{margin:10px 0 18px;padding-left:16px;border-left:1px solid var(--line)}
+.note{color:var(--fg);margin:12px 0}
+.note:first-child{margin-top:4px}
+.step{margin:2px 0;color:var(--muted);font-size:15px}
+.step-row{display:flex;align-items:center;gap:9px;padding:3px 0;min-width:0;line-height:22px}
+.step-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.step-row svg{width:15px;height:15px;flex:none;opacity:.8}
+.step>summary:hover{color:var(--fg)}
+.step-body{margin:6px 0 12px 24px}
+.event{display:flex;align-items:center;gap:8px;color:var(--faint);font-size:14px;margin:18px 0 10px}
+.event svg{width:14px;height:14px}
+.prose{overflow-wrap:break-word;min-width:0}
+.agent,.turn{min-width:0;max-width:100%}
+.answer+.answer,.work+.answer,.event+.work{margin-top:4px}
+.prose>:first-child{margin-top:0}.prose>:last-child{margin-bottom:0}
+.prose p{margin:16px 0 0}
+.prose ul,.prose ol{margin:8px 0 0;padding-left:32px}
+.prose li{margin:4px 0}.prose li>p{margin:0}
+.prose li::marker{color:var(--muted)}
+.prose h1,.prose h2,.prose h3,.prose h4{font-size:18px;line-height:28px;font-weight:600;margin:24px 0 0}
+.prose h1{font-size:20px}
+.prose strong{font-weight:600}
+.prose a{color:var(--link);text-decoration:underline dotted var(--link-line);text-underline-offset:3px}
+.prose a:hover{text-decoration-style:solid}
+.prose a .gl{display:inline-block;width:13px;height:13px;vertical-align:-1px;margin-right:3px;opacity:.75}
+.prose a .gl svg{width:100%;height:100%;display:block}
+.prose :not(pre)>code{font:14px/1 var(--mono);background:var(--chip);border-radius:6px;padding:2px 5px}
+.prose blockquote{margin:16px 0 0;padding-left:16px;border-left:3px solid var(--line);color:var(--muted)}
+.prose hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.prose table{border-collapse:collapse;margin:16px 0 0;font-size:15px;line-height:22px;display:block;overflow-x:auto;max-width:100%}
+.prose th,.prose td{padding:8px 16px 8px 0;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.prose th{font-weight:600}
+.prose tr:last-child td{border-bottom:0}
+.small{font-size:14px;line-height:22px}
+.code{margin:16px 0 0;border-radius:12px;background:var(--code-bg);overflow:hidden}
+.code-head{display:flex;justify-content:space-between;align-items:center;padding:8px 14px 0;font:12px var(--sans);color:var(--faint)}
+.copy{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:2px 4px;border-radius:4px}
+.copy:hover{color:var(--fg)}
+.code pre{margin:0;padding:8px 14px 14px;overflow-x:auto;font:13.5px/1.6 var(--mono)}
+.prose pre,pre.io{background:transparent!important}
+.prose pre .err,pre.io .err{border:0!important;color:inherit!important}
+pre.io{margin:6px 0;padding:10px 12px;background:var(--code-bg)!important;border-radius:10px;
+ font:12.5px/1.55 var(--mono);overflow:auto;max-height:320px;white-space:pre-wrap;word-break:break-word;color:var(--fg)}
+pre.io.out{color:var(--muted)}
+pre.io.err{color:var(--err)}
+.report{background:var(--code-bg);border-radius:10px;padding:12px 16px;max-height:460px;overflow:auto;color:var(--fg)}
+.report table{font-size:13px}
+img.shot{display:block;max-width:100%;border:1px solid var(--line);border-radius:10px;margin:8px 0}
+.foot{color:var(--faint);font-size:13px;text-align:center;padding:48px 24px 64px}
+@media (max-width:640px){.bar-meta,.brand{display:none}.bar-title{text-align:left}.col{padding:0 16px}.bubble{max-width:88%}}
+"""
+
+PAGE_JS = """
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>{
+  const t=b.closest('.code').querySelector('pre').innerText;
+  navigator.clipboard.writeText(t).then(()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1200)});
+}));
+const g=document.getElementById('globe').innerHTML;
+document.querySelectorAll('.answer a[href^="http"], .note a[href^="http"]').forEach(a=>{
+  const s=document.createElement('span');s.className='gl';s.innerHTML=g;a.prepend(s);
+});
+"""
+
+
+# ── privacy ──────────────────────────────────────────────────────────────────
+
+def scrub(obj, subs):
+    if isinstance(obj, str):
+        if obj.startswith("data:image/"):
+            return obj
+        for a, b in subs:
+            obj = obj.replace(a, b)
+        return obj
+    if isinstance(obj, list):
+        return [scrub(x, subs) for x in obj]
+    if isinstance(obj, dict):
+        return {k: scrub(v, subs) for k, v in obj.items()}
+    return obj
+
+
+def pick_turns(turns, spec):
+    keep = set()
+    for part in spec.split(","):
+        a, _, b = part.partition("-")
+        keep.update(range(int(a), int(b or a) + 1))
+    return [t for i, t in enumerate(turns, 1) if i in keep]
+
+
+# ── publishing ───────────────────────────────────────────────────────────────
+
+CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "share-chat" / "config.json"
+SITE_DIR = Path(os.environ.get("SHARE_CHAT_SITE", HOME / ".local" / "share" / "share-chat" / "site"))
+
+SECRET_PATTERNS = [
+    ("private key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    ("OpenAI/Anthropic key", r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}"),
+    ("GitHub token", r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}"),
+    ("AWS key", r"\bAKIA[0-9A-Z]{16}\b"),
+    ("Slack token", r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
+    ("Google API key", r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    ("password/token assignment", r"(?i)\b(?:password|passwd|secret|api[_-]?key|token)\s*[=:]\s*['\"]?[^\s'\"<]{8,}"),
+]
+EMAIL = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+
+
+def load_config():
+    try:
+        return json.loads(CONFIG.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"sessions": {}}
+
+
+def save_config(cfg):
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(json.dumps(cfg, indent=2))
+
+
+def scan(page_html):
+    """Return a list of human-readable findings: likely secrets and email addresses."""
+    text = re.sub(r"data:image/[^\"']+", "", page_html)  # skip embedded screenshots
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    found = []
+    for name, pat in SECRET_PATTERNS:
+        for m in re.finditer(pat, text):
+            found.append(f"{name}: {m.group(0)[:12]}…")
+    emails = sorted(set(re.findall(EMAIL, text)) - {"noreply@anthropic.com"})
+    found += [f"email address: {e}" for e in emails]
+    if shutil.which("gitleaks"):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "page.txt").write_text(text)
+            r = subprocess.run(["gitleaks", "detect", "--no-git", "--no-banner", "--redact", "-s", d,
+                                "-f", "json", "-r", str(Path(d, "out.json"))], capture_output=True, text=True)
+            try:
+                for f in json.loads(Path(d, "out.json").read_text() or "[]"):
+                    found.append(f"gitleaks {f.get('RuleID')}: line {f.get('StartLine')}")
+            except (OSError, json.JSONDecodeError):
+                pass
+    return list(dict.fromkeys(found))
+
+
+def slugify(title):
+    s = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40].strip("-")
+    return f"{s or 'chat'}-{secrets.token_hex(3)}"
+
+
+def netlify(*args):
+    npx = shutil.which("npx")
+    cmd = ["npx", "--yes", "netlify-cli", *args]
+    if not npx:  # Node installed through nvm isn't on PATH in non-login shells
+        nvm = HOME / ".nvm" / "nvm.sh"
+        if not nvm.exists():
+            sys.exit("npx not found: install Node (or nvm) to publish")
+        cmd = ["bash", "-c", f'. "{nvm}" >/dev/null && exec "$@"', "_", *cmd]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        sys.exit(f"netlify-cli {' '.join(args[:1])} failed:\n{r.stdout[-1500:]}{r.stderr[-1500:]}")
+    return r.stdout
+
+
+def ensure_site(cfg):
+    if cfg.get("site_id"):
+        return cfg
+    name = f"chats-{secrets.token_hex(4)}"
+    out = netlify("sites:create", "--name", name, "--disable-linking")
+    m = re.search(r"Project ID:\s*([0-9a-f-]{36})", out) or re.search(r"\b([0-9a-f]{8}-[0-9a-f-]{27})\b", out)
+    if not m:
+        sys.exit(f"couldn't read the new site's ID from netlify-cli output:\n{out[-1500:]}")
+    cfg.update(site_id=m.group(1), site_url=f"https://{name}.netlify.app")
+    save_config(cfg)
+    print(f"created Netlify site {cfg['site_url']}", file=sys.stderr)
+    return cfg
+
+
+def deploy(cfg):
+    SITE_DIR.mkdir(parents=True, exist_ok=True)
+    root = SITE_DIR / "index.html"
+    if not root.exists():  # no public list of chats at the root
+        root.write_text('<!doctype html><meta name="robots" content="noindex"><title>Nothing here</title>')
+    (SITE_DIR / "robots.txt").write_text("User-agent: *\nDisallow: /\n")
+    netlify("deploy", "--no-build", "--prod", "--dir", str(SITE_DIR), "--site", cfg["site_id"])
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Claude Code / Codex session → shareable HTML page")
+    ap.add_argument("session", nargs="?", help="session ID or .jsonl path (default: latest in this folder)")
+    ap.add_argument("-o", "--output", help="write the page here (default: index.html; with --publish, the site folder)")
+    ap.add_argument("--title")
+    ap.add_argument("--no-steps", action="store_true", help="leave tool calls and thinking out entirely")
+    ap.add_argument("--redact", action="append", default=[], metavar="STR", help="replace STR with ••• (repeatable)")
+    ap.add_argument("--turns", help="keep only these turns, e.g. 1-3,5")
+    ap.add_argument("--check", action="store_true", help="scan the page for secrets and emails, don't publish")
+    ap.add_argument("--publish", action="store_true", help="publish to the Netlify chats site and print the link")
+    ap.add_argument("--force", action="store_true", help="publish even though the scan found something")
+    ap.add_argument("--unpublish", action="store_true", help="take a published session down")
+    ap.add_argument("--list", action="store_true", help="list published sessions and their links")
+    a = ap.parse_args()
+    cfg = load_config()
+
+    if a.list:
+        for sid, info in cfg.get("sessions", {}).items():
+            print(f"{cfg.get('site_url', '?')}/{info['slug']}/\t{info.get('title', '')}\t{sid}")
+        return
+
+    path = resolve(a.session)
+    sid = session_name(path)
+
+    if a.unpublish:
+        info = cfg.get("sessions", {}).pop(sid, None)
+        if not info:
+            sys.exit(f"{sid} isn't published")
+        shutil.rmtree(SITE_DIR / info["slug"], ignore_errors=True)
+        deploy(ensure_site(cfg))
+        save_config(cfg)
+        print(f"took down {cfg['site_url']}/{info['slug']}/", file=sys.stderr)
+        return
+
+    sess = (parse_codex if first_record(path).get("type") == "session_meta" else parse_claude)(path)
+    if not sess["turns"]:
+        sys.exit(f"no messages found in {path}")
+    if a.turns:
+        sess["turns"] = pick_turns(sess["turns"], a.turns)
+    if a.title:
+        sess["title"] = a.title
+    subs = [(s, "•••") for s in a.redact] + [(str(HOME), "~"), (HOME.name, "user")]
+    sess = scrub(sess, subs)
+    page = render(sess, show_steps=not a.no_steps)
+    n_steps = sum(1 for t in sess["turns"] for i in t["items"] if i["kind"] == "step")
+    summary = f"{len(sess['turns'])} turns, {n_steps} tool steps ({path.name})"
+
+    if a.check or a.publish:
+        found = scan(page)
+        if found:
+            print("scan found:\n  " + "\n  ".join(found), file=sys.stderr)
+            if not a.force:
+                sys.exit(3 if a.publish else 0)  # publish refuses until --force or --redact
+        else:
+            print("scan: nothing found", file=sys.stderr)
+        if a.check:
+            return
+
+    if not a.publish:
+        out = a.output or "index.html"
+        Path(out).write_text(page, encoding="utf-8")
+        print(f"wrote {out}: {summary}", file=sys.stderr)
+        return
+
+    cfg = ensure_site(cfg)
+    info = cfg.setdefault("sessions", {}).get(sid) or {"slug": slugify(sess["title"] or "chat")}
+    info["title"] = sess["title"] or ""
+    (SITE_DIR / info["slug"]).mkdir(parents=True, exist_ok=True)
+    (SITE_DIR / info["slug"] / "index.html").write_text(page, encoding="utf-8")
+    deploy(cfg)
+    cfg["sessions"][sid] = info
+    save_config(cfg)
+    print(f"published {summary}", file=sys.stderr)
+    print(f"{cfg['site_url']}/{info['slug']}/")
+
+
+if __name__ == "__main__":
+    main()
