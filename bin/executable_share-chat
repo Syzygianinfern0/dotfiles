@@ -782,7 +782,7 @@ def ensure_site(cfg):
     if cfg.get("site_id"):
         return cfg
     name = f"chats-{secrets.token_hex(4)}"
-    out = netlify("sites:create", "--name", name, "--disable-linking")
+    out = re.sub(r"\x1b\[[0-9;]*m", "", netlify("sites:create", "--name", name, "--disable-linking"))
     m = re.search(r"Project ID:\s*([0-9a-f-]{36})", out) or re.search(r"\b([0-9a-f]{8}-[0-9a-f-]{27})\b", out)
     if not m:
         sys.exit(f"couldn't read the new site's ID from netlify-cli output:\n{out[-1500:]}")

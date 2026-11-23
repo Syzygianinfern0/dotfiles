@@ -1,6 +1,6 @@
 ---
 name: share-chat
-description: Turn a Claude Code or Codex session into a clean, ChatGPT-style share page (the human's messages as bubbles, the agent's final answers as prose, each response's tool calls folded into a "Worked for 2m 14s" dropdown) and publish it to a public Netlify link, through ~/bin/share-chat. Use when the user wants to share, export, publish or send a link to an agent chat or session (this one or another by session ID), see what a session looks like as a page, or take a shared chat down. Not for claude.ai or ChatGPT web chats, which have their own share buttons.
+description: Turn a Claude Code or Codex session into a clean, ChatGPT-style share page (the human's messages as bubbles, the agent's final answers as prose, each response's tool calls folded into a "Worked for 2m 14s" dropdown) and publish it to a public Netlify link, through ~/bin/share-chat. Use when the user wants to share, publish or send a link to an agent chat or session (asking for that is the go-ahead to publish), export or preview one as a page (this one or another by session ID), see what a session looks like as a page, or take a shared chat down. Not for claude.ai or ChatGPT web chats, which have their own share buttons.
 ---
 
 # Sharing agent chats
@@ -20,22 +20,22 @@ the page on the user's Netlify chats site and prints the link.
 
 ## Workflow
 
-1. **Preview locally first** unless the user asked straight for a link:
-   `share-chat <id> -o <folder>/<name>.html`, then open it for the user (`open` on the Mac). Put the file in the
-   project folder, not in a temp or scratch directory, if the user may want to keep it.
-2. **Scan:** `share-chat <id> --check` lists likely secrets (API keys, tokens, private keys, password assignments,
-   via built-in patterns plus `gitleaks` when installed) and every email address on the page. Show the user what it
-   found. Remove things with `--redact "<string>"` (repeatable; replaced by •••), cut turns with `--turns 1-3,6`,
-   or drop all tool activity with `--no-steps`. The user's home folder becomes `~` and their username `user`
-   automatically.
-3. **Confirm before publishing.** The link is public: anyone who has it can read the whole page, including
-   expanded tool output. Say so, list the scan findings, and wait for a clear yes. The paths are unguessable and the
-   site has `noindex` + `robots.txt`, but it is not private.
-4. **Publish:** `share-chat <id> --publish` (add the same `--redact`/`--turns`/`--no-steps`/`--title` options).
-   It exits with code 3 and publishes nothing if the scan finds anything; rerun with `--redact` to fix it, or
-   `--force` only after the user has seen the findings and said the page is fine as is. It prints the URL on stdout.
-   Check it with `curl -s -o /dev/null -w "%{http_code}\n" <url>` (expect 200) and give the user the link.
-5. Publishing the same session again updates the page at the same link.
+Asking to share, publish or get a link for a chat (or invoking this skill) is the go-ahead to publish it. Don't
+preview first and don't ask "should I publish?": run it and hand back the link.
+
+1. **Publish:** `share-chat <id> --publish` (optionally `--title "..."`, `--redact "<string>"` (repeatable; replaced
+   by •••), `--turns 1-3,6`, `--no-steps`). It scans the page first for likely secrets (API keys, tokens, private
+   keys, password assignments, via built-in patterns plus `gitleaks` when installed) and every email address. The
+   user's home folder becomes `~` and their username `user` automatically.
+2. **If the scan is clean** it deploys and prints the URL on stdout. Check it with
+   `curl -s -o /dev/null -w "%{http_code}\n" <url>` (expect 200) and give the user the link. That's the whole job.
+3. **Only if the scan finds something** (exit code 3, nothing published): show the user the findings and ask
+   whether to redact them (rerun with `--redact` for each) or publish as is (`--force`). This is the one case to stop
+   and ask, because the page is public: anyone with the link can read it, including expanded tool output.
+4. Publishing the same session again updates the page at the same link.
+
+Make a local file instead (`share-chat <id> -o <folder>/<name>.html`, then `open` it) only when the user asks for a
+preview or an export without a link; `share-chat <id> --check` runs just the scan.
 
 ## Other commands
 
